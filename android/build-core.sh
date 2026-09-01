@@ -82,12 +82,20 @@ export PKG_CONFIG_LIBDIR="$SDL3_PREFIX/lib/pkgconfig"
 # 2. DOSBox-X tree, configured for Android
 # ---------------------------------------------------------------------------
 if [ ! -d "$TREE" ]; then
-    echo "==> cloning a private tree for $ANDROID_ABI"
-    git -C "$ROOT" worktree list >/dev/null 2>&1 || true
+    echo "==> staging a private tree for $ANDROID_ABI"
     mkdir -p "$TREE"
-    # Copy rather than git-clone: the working tree may have uncommitted work
-    # in progress, and that is what we want to build.
-    tar -C "$ROOT" --exclude=android/build --exclude=.git -cf - . | tar -C "$TREE" -xf -
+    # Copy the TRACKED files only, at their current working-tree content. A
+    # plain recursive copy also drags in the host build's config.h, Makefiles
+    # and .o files -- and then the `[ ! -f config.h ]` guard below skips
+    # configure entirely, so the Android compiler happily rebuilds everything
+    # against the HOST configuration. That fails at the very end with
+    #   ld.lld: error: unable to find library -lslirp
+    # which reads like a missing Android dependency and is nothing of the kind.
+    # Build artifacts are untracked, so listing tracked files excludes them
+    # while still picking up uncommitted source edits.
+    git -C "$ROOT" ls-files -z \
+        | tar -C "$ROOT" --null -T - -cf - \
+        | tar -C "$TREE" -xf -
 fi
 
 cd "$TREE"
@@ -104,6 +112,8 @@ if [ ! -f config.h ]; then
         --disable-opengl --disable-printer --disable-sdlnet \
         --disable-freetype --disable-libfluidsynth \
         --disable-alsa-midi --disable-avcodec \
+        --disable-libslirp \
+        --disable-screenshots \
         CFLAGS="-fPIC -O2 -g0 -DANDROID" \
         CXXFLAGS="-fPIC -O2 -g0 -DANDROID" \
         || { echo "configure failed; see $TREE/config.log" >&2; exit 1; }

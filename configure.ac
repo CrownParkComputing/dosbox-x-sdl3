@@ -1309,7 +1309,16 @@ if test x$have_png_lib = xyes -a x$have_png_h = xyes ; then
         AC_MSG_RESULT([no])
     fi
 else
-    AC_MSG_ERROR([Can't find libpng, install or try building the in-tree code])
+    dnl --disable-screenshots used to be a lie: the error below fired whether
+    dnl or not screenshots were wanted, so libpng was in practice mandatory.
+    dnl That blocks cross-compiling for targets with no libpng (Android), where
+    dnl screenshots are exactly the feature you would drop. Only insist on
+    dnl libpng when the feature that needs it is actually enabled.
+    if test x$enable_screenshots = xyes; then
+        AC_MSG_ERROR([Can't find libpng, install or try building the in-tree code])
+    else
+        AC_MSG_RESULT([no (libpng not found, and --disable-screenshots was given)])
+    fi
 fi
 
 dnl FEATURE: Whether to use libpcap, and enable ethernet pass-through
