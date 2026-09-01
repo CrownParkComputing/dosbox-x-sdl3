@@ -525,7 +525,9 @@ AC_ARG_ENABLE([sdl3],
 )
 
 dnl LIBRARY TEST: SDL 3.x
-SDL3_VERSION=3.5.0
+dnl 3.5.0 upstream; lowered to the first stable SDL3 release so distro SDL3
+dnl (e.g. 3.4.x) is accepted. Raise again if a 3.5-only API is adopted.
+SDL3_VERSION=3.2.0
 AM_PATH_SDL3($SDL3_VERSION)
 
 dnl LIBRARY TEST: SDL 2.x
@@ -543,7 +545,20 @@ if test x"$enable_sdl3" = xyes; then
     if test -n "$SDL3_LIBS"; then
         SDL_STRING="SDL3"
         LIBS="$LIBS $SDL3_LIBS"
-        CPPFLAGS="$CPPFLAGS $SDL3_CFLAGS"
+        dnl SDL3 installs headers under /usr/include/SDL3 and its pkg-config
+        dnl --cflags is EMPTY, so the tree's SDL2-style bare #include "SDL.h"
+        dnl cannot resolve. include/sdl3compat/ forwards those to SDL3/*.h and
+        dnl carries the SDL2->SDL3 source shims. It must precede $SDL3_CFLAGS.
+        dnl SDL_ENABLE_OLD_NAMES turns on SDL3's own <SDL3/SDL_oldnames.h>,
+        dnl ~1032 SDL2->SDL3 mappings. Without it the old spellings resolve to
+        dnl SDL_X_renamed_SDL_Y, which is SDL3's way of telling you the new
+        dnl name at compile time -- useful, but not what a source-compat build
+        dnl wants. This is what removes the mechanical-rename work entirely.
+        CPPFLAGS="$CPPFLAGS -DSDL_ENABLE_OLD_NAMES=1 -I\$(top_srcdir)/include/sdl3compat -I$srcdir/include/sdl3compat $SDL3_CFLAGS"
+        dnl Upstream wires the libs but never defines C_SDL3, so the SDL3 build
+        dnl was indistinguishable from SDL1 in the source. dosbox.h keys its
+        dnl "define C_SDL2 so SDL1 code does not compile" hack off this.
+        AC_DEFINE(C_SDL3,1,[Define to 1 to use SDL 3.x])
         AC_MSG_NOTICE([Building with SDL3])
     else
         AC_MSG_ERROR([--enable-sdl3 was specified, but SDL3 was not found])
