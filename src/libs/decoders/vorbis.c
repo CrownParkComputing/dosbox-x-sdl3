@@ -48,20 +48,16 @@
 #  define memset SDL_memset
 #endif
 
-/* This file is #included into a C++ translation unit (cdrom_image.cpp), and
- * the macro below rewrites every later `qsort` token -- including the
- * `std::qsort` declaration inside <cstdlib>, which then reads as
- * `std::SDL_qsort` and fails to compile. Pulling <cstdlib> in FIRST means its
- * include guard has already fired by the time anything else asks for it, so
- * the declaration is never seen through the macro.
+/* NOTE: these macros are #undef'd at the end of this file. cdrom_image.cpp
+ * #includes this .c into a C++ translation unit and then continues with
+ * flac.c, opus.c, wav.c, mp3_seek_table.cpp and mp3.cpp -- so anything left
+ * defined here leaks into all of them. A live `qsort` macro rewrites the
+ * std::qsort declaration in <cstdlib> to std::SDL_qsort:
  *
- * Whether this bites depends on which header happens to reach <cstdlib>
- * first, which is why it built against one SDL3 point release and not
- * another. Making it explicit removes the coin toss. */
-#ifdef __cplusplus
-#  include <cstdlib>
-#endif
-
+ *   error: 'SDL_qsort' has not been declared in 'std'
+ *
+ * Whether that fires depends on which sibling pulls <cstdlib> first, which is
+ * why this built against SDL3 3.4.12 locally and failed against 3.2.20 in CI. */
 #define qsort        SDL_qsort
 #define memcmp       SDL_memcmp
 #define dealloca(x)  SDL_stack_free((x))
@@ -239,5 +235,11 @@ const Sound_DecoderFunctions __Sound_DecoderFunctions_VORBIS =
     VORBIS_rewind,     /* rewind() method */
     VORBIS_seek        /*   seek() method */
 };
+
+/* Confine this file's libc-to-SDL redirections; see the note beside the
+ * #defines above. stb_vorbis has already been compiled in by this point, so
+ * nothing below needs them. */
+#undef qsort
+#undef memcmp
 
 /* end of SDL_sound_vorbis.c ... */
