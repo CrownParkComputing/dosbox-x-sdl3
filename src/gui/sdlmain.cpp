@@ -5114,8 +5114,8 @@ static void HandleMouseButton(SDL_MouseButtonEvent * button, SDL_MouseMotionEven
                         case SDL_FINGERDOWN:
                             if (touchscreen_finger_lock == no_finger_id &&
                                 touchscreen_touch_lock == no_touch_id) {
-                                touchscreen_finger_lock = event.tfinger.fingerId;
-                                touchscreen_touch_lock = event.tfinger.touchId;
+                                touchscreen_finger_lock = event.tfinger.fingerID;
+                                touchscreen_touch_lock = event.tfinger.touchID;
                                 Sint32 x,y;
 
                                 x = (Sint32)(event.tfinger.x * currentWindowWidth);
@@ -5131,8 +5131,8 @@ static void HandleMouseButton(SDL_MouseButtonEvent * button, SDL_MouseMotionEven
                             }
                             break;
                         case SDL_FINGERUP:
-                            if (touchscreen_finger_lock == event.tfinger.fingerId &&
-                                touchscreen_touch_lock == event.tfinger.touchId) {
+                            if (touchscreen_finger_lock == event.tfinger.fingerID &&
+                                touchscreen_touch_lock == event.tfinger.touchID) {
                                 touchscreen_finger_lock = no_finger_id;
                                 touchscreen_touch_lock = no_touch_id;
                                 Sint32 x,y;
@@ -5150,8 +5150,8 @@ static void HandleMouseButton(SDL_MouseButtonEvent * button, SDL_MouseMotionEven
                             }
                             break;
                         case SDL_FINGERMOTION:
-                            if (touchscreen_finger_lock == event.tfinger.fingerId &&
-                                touchscreen_touch_lock == event.tfinger.touchId) {
+                            if (touchscreen_finger_lock == event.tfinger.fingerID &&
+                                touchscreen_touch_lock == event.tfinger.touchID) {
                                 Sint32 x,y;
 
                                 x = (Sint32)(event.tfinger.x * currentWindowWidth);
@@ -5753,7 +5753,7 @@ static void FingerToFakeMouseMotion(SDL_TouchFingerEvent * finger) {
 
         memset(&fakeb,0,sizeof(fakeb));
 
-        fakeb.state = (finger->type == SDL_FINGERDOWN) ? SDL_PRESSED : SDL_RELEASED;
+        fakeb.down = (finger->type == SDL_FINGERDOWN) ? SDL_PRESSED : SDL_RELEASED;
         fakeb.button = SDL_BUTTON_LEFT;
         fakeb.x = fake.x;
         fakeb.y = fake.y;
@@ -5774,22 +5774,22 @@ static void HandleTouchscreenFinger(SDL_TouchFingerEvent * finger) {
     if (finger->type == SDL_FINGERDOWN) {
         if (touchscreen_finger_lock == no_finger_id &&
             touchscreen_touch_lock == no_touch_id) {
-            touchscreen_finger_lock = finger->fingerId;
-            touchscreen_touch_lock = finger->touchId;
+            touchscreen_finger_lock = finger->fingerID;
+            touchscreen_touch_lock = finger->touchID;
             FingerToFakeMouseMotion(finger);
         }
     }
     else if (finger->type == SDL_FINGERUP) {
-        if (touchscreen_finger_lock == finger->fingerId &&
-            touchscreen_touch_lock == finger->touchId) {
+        if (touchscreen_finger_lock == finger->fingerID &&
+            touchscreen_touch_lock == finger->touchID) {
             touchscreen_finger_lock = no_finger_id;
             touchscreen_touch_lock = no_touch_id;
             FingerToFakeMouseMotion(finger);
         }
     }
     else if (finger->type == SDL_FINGERMOTION) {
-        if (touchscreen_finger_lock == finger->fingerId &&
-            touchscreen_touch_lock == finger->touchId) {
+        if (touchscreen_finger_lock == finger->fingerID &&
+            touchscreen_touch_lock == finger->touchID) {
             FingerToFakeMouseMotion(finger);
         }
     }

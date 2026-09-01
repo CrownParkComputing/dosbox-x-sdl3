@@ -5077,7 +5077,7 @@ void BIND_MappingEvents(void) {
             {
                 static int event_count = 0;
 #if defined(C_SDL2)
-                SDL_Keysym &s = event.key.keysym;
+                SDL_Keysym s = retrodosbox_keysym(&event.key); /* SDL3: no keysym member; rebuild it (by value) */
 #else
                 SDL_keysym &s = event.key.keysym;
 #endif

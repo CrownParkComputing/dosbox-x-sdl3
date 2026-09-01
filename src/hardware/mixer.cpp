@@ -66,6 +66,12 @@
 
 #ifdef C_SDL2
 SDL_AudioDeviceID SDL2_AudioDevice = 0; /* valid IDs are 2 or higher, 1 for compat, 0 is never a valid ID */
+#if defined(C_SDL3)
+/* SDL3 replaced "open a device, it calls you back to fill a buffer" with an
+ * audio STREAM you push into. The device id above stays valid (streams carry
+ * one), but locking and pausing are stream operations now. */
+SDL_AudioStream *SDL3_AudioStream = NULL;
+#endif
 #endif
 
 #define DC_ADJBITS (24u)
@@ -773,7 +779,11 @@ static void MIXER_MixData(Bitu fracs/*render up to*/) {
 
 static void MIXER_FillUp(void) {
 #ifdef C_SDL2
+#if defined(C_SDL3)
+    if (SDL3_AudioStream) SDL_LockAudioStream(SDL3_AudioStream);
+#else
     SDL_LockAudioDevice(SDL2_AudioDevice);
+#endif
 #else
     SDL_LockAudio();
 #endif
@@ -781,7 +791,11 @@ static void MIXER_FillUp(void) {
     if (index < 0) index = 0;
     MIXER_MixData((Bitu)((double)index * ((Bitu)mixer.samples_this_ms.w * mixer.samples_this_ms.fd)));
 #ifdef C_SDL2
+#if defined(C_SDL3)
+    if (SDL3_AudioStream) SDL_UnlockAudioStream(SDL3_AudioStream);
+#else
     SDL_UnlockAudioDevice(SDL2_AudioDevice);
+#endif
 #else
     SDL_UnlockAudio();
 #endif
@@ -800,7 +814,11 @@ static void MIXER_Mix(void) {
     Bitu thr;
 
 #ifdef C_SDL2
+#if defined(C_SDL3)
+    if (SDL3_AudioStream) SDL_LockAudioStream(SDL3_AudioStream);
+#else
     SDL_LockAudioDevice(SDL2_AudioDevice);
+#endif
 #else
     SDL_LockAudio();
 #endif
@@ -832,7 +850,11 @@ static void MIXER_Mix(void) {
     mixer.samples_rendered_ms.fn = 0;
     mixer.samples_rendered_ms.w = 0;
 #ifdef C_SDL2
+#if defined(C_SDL3)
+    if (SDL3_AudioStream) SDL_UnlockAudioStream(SDL3_AudioStream);
+#else
     SDL_UnlockAudioDevice(SDL2_AudioDevice);
+#endif
 #else
     SDL_UnlockAudio();
 #endif
@@ -911,6 +933,29 @@ static void SDLCALL MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
         }
     }
 }
+
+#if defined(C_SDL3)
+/* SDL3 hands the callback a stream to PUSH into and asks for a byte count,
+ * rather than handing over a buffer to fill. MIXER_CallBack still wants the
+ * SDL2 shape, so render into a scratch buffer and push that. Chunked because
+ * additional_amount can exceed any fixed buffer. */
+static void SDLCALL MIXER_SDL3_StreamCallback(void *userdata, SDL_AudioStream *stream,
+                                              int additional_amount, int total_amount) {
+    (void)total_amount;
+    static Uint8 buf[16384];
+    while (additional_amount > 0) {
+        int chunk = additional_amount;
+        if (chunk > (int)sizeof(buf)) chunk = (int)sizeof(buf);
+        /* keep whole frames: 16-bit stereo */
+        chunk -= chunk % MIXER_SSIZE;
+        if (chunk <= 0) break;
+        MIXER_CallBack(userdata, buf, chunk);
+        SDL_PutAudioStreamData(stream, buf, chunk);
+        additional_amount -= chunk;
+    }
+}
+#endif
+
 
 std::string mixerinfo() {
     std::string info="Channel  Main    Main(dB)\n";
@@ -1165,9 +1210,15 @@ void MIXER_Init() {
     spec.freq=(int)mixer.freq;
     spec.format=AUDIO_S16SYS;
     spec.channels=2;
+#if !defined(C_SDL3)
     spec.callback=MIXER_CallBack;
     spec.userdata=NULL;
     spec.samples=(Uint16)mixer.blocksize;
+#else
+    /* SDL3's SDL_AudioSpec is only {format,channels,freq}: the callback and
+     * buffer size are arguments to SDL_OpenAudioDeviceStream instead. */
+    obtained = spec;
+#endif
 
     /* DosboxMultiplatform bridge: substitute the platform audio backend for
      * SDL's audio output. audio_backend_init is declared weak at file scope
@@ -1202,7 +1253,9 @@ void MIXER_Init() {
         LOG(LOG_MISC,LOG_DEBUG)("MIXER:No Sound Mode Selected.");
         TIMER_AddTickHandler(MIXER_Mix);
 
-#ifdef C_SDL2
+#if defined(C_SDL3)
+    } else if ((SDL3_AudioStream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, MIXER_SDL3_StreamCallback, NULL)) == NULL) {
+#elif defined(C_SDL2)
     } else if ((SDL2_AudioDevice=SDL_OpenAudioDevice(NULL, 0, &spec, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_SAMPLES_CHANGE)) == 0) {
 #else
     } else if (SDL_OpenAudio(&spec, &obtained) <0 ) {
@@ -1214,21 +1267,33 @@ void MIXER_Init() {
         mixer.nosound = true;
         LOG(LOG_MISC,LOG_DEBUG)("MIXER:Failed to get the sample format I wanted.");
         TIMER_AddTickHandler(MIXER_Mix);
-#ifdef C_SDL2
+#if defined(C_SDL3)
+        SDL_DestroyAudioStream(SDL3_AudioStream);
+        SDL3_AudioStream = NULL;
+#elif defined(C_SDL2)
         SDL_CloseAudioDevice(SDL2_AudioDevice);
         SDL2_AudioDevice = 0;
 #else
         SDL_CloseAudio();
 #endif
     } else {
+#if defined(C_SDL3)
+        /* SDL3 resamples in the stream, so what we asked for IS what we get;
+         * there is no negotiated buffer size to read back. */
+        mixer.freq=(unsigned int)obtained.freq;
+#else
         if(((Bitu)mixer.freq != (Bitu)obtained.freq) || ((Bitu)mixer.blocksize != (Bitu)obtained.samples))
             LOG(LOG_MISC,LOG_DEBUG)("MIXER:Got different values from SDL: freq %d, blocksize %d",(int)obtained.freq,(int)obtained.samples);
 
         mixer.freq=(unsigned int)obtained.freq;
         mixer.blocksize=obtained.samples;
+#endif
         TIMER_AddTickHandler(MIXER_Mix);
         if (mixer.sampleaccurate) PIC_AddEvent(MIXER_MixSingle,1000.0 / mixer.freq);
-#ifdef C_SDL2
+#if defined(C_SDL3)
+        /* streams start paused; this is SDL3's "unpause" */
+        SDL_ResumeAudioStreamDevice(SDL3_AudioStream);
+#elif defined(C_SDL2)
         SDL_PauseAudioDevice(SDL2_AudioDevice, 0);
 #else
         SDL_PauseAudio(0);

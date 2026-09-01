@@ -139,4 +139,134 @@ static inline bool retrodosbox_sdl3_show_cursor(int on) {
 #define SDL_RELEASED false
 #endif
 
+/* ---------------------------------------------------------------------- */
+/* SDL_Keysym                                                              */
+/* ---------------------------------------------------------------------- */
+/* SDL3 deleted SDL_Keysym and folded its fields straight into
+ * SDL_KeyboardEvent. Most call sites just became event.key.scancode etc., but
+ * a few pass "the keysym" around as a value -- gui_tk's SDL_to_GUI() and
+ * SDLSymToChar() take one by const reference, and sdl_mapper binds one.
+ * Reconstructing the small struct is far less invasive than rewriting those
+ * signatures to take a whole event. */
+typedef struct SDL_Keysym {
+    SDL_Scancode scancode;
+    SDL_Keycode  sym;
+    Uint16       mod;
+} SDL_Keysym;
+
+static inline SDL_Keysym retrodosbox_keysym(const SDL_KeyboardEvent *e)
+{
+    SDL_Keysym k;
+    k.scancode = e->scancode;
+    k.sym      = e->key;
+    k.mod      = (Uint16)e->mod;
+    return k;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Removed flags                                                           */
+/* ---------------------------------------------------------------------- */
+/* SDL3 windows are shown unless SDL_WINDOW_HIDDEN; SDL_SWSURFACE was an
+ * SDL1 surface flag with no SDL3 meaning. Both are now no-op bits. */
+#ifndef SDL_WINDOW_SHOWN
+#define SDL_WINDOW_SHOWN 0
+#endif
+#ifndef SDL_SWSURFACE
+#define SDL_SWSURFACE 0
+#endif
+/* SDL2's SDL_ShowCursor(SDL_QUERY) asked rather than set. */
+#ifndef SDL_QUERY
+#define SDL_QUERY (-1)
+#endif
+
+/* ---------------------------------------------------------------------- */
+/* Calls whose SHAPE changed (arity or return), not just their name        */
+/* ---------------------------------------------------------------------- */
+/* Each wrapper calls the real SDL3 function through a parenthesised name,
+ * (SDL_Foo)(...), so the function-like macro below does not recurse. */
+
+/* SDL2: SDL_CreateRGBSurface(flags,w,h,depth,Rmask,Gmask,Bmask,Amask)
+ * SDL3: SDL_CreateSurface(w,h,SDL_PixelFormat) -- the format is looked up from
+ *       the bit depth and masks instead of being described by them. */
+static inline SDL_Surface *retrodosbox_create_rgb_surface(
+        Uint32 flags, int w, int h, int depth,
+        Uint32 rmask, Uint32 gmask, Uint32 bmask, Uint32 amask)
+{
+    (void)flags;
+    return SDL_CreateSurface(w, h,
+        SDL_GetPixelFormatForMasks(depth, rmask, gmask, bmask, amask));
+}
+#define SDL_CreateRGBSurface(f,w,h,d,r,g,b,a) \
+    retrodosbox_create_rgb_surface((f),(w),(h),(d),(r),(g),(b),(a))
+
+/* SDL2 enumerated displays and joysticks by dense index; SDL3 hands out an
+ * array of stable IDs. These keep the index-based call sites working. */
+static inline int retrodosbox_num_video_displays(void)
+{
+    int n = 0; SDL_DisplayID *d = SDL_GetDisplays(&n); SDL_free(d); return n;
+}
+#define SDL_GetNumVideoDisplays() retrodosbox_num_video_displays()
+
+static inline SDL_DisplayID retrodosbox_display_id(int index)
+{
+    int n = 0; SDL_DisplayID id = 0;
+    SDL_DisplayID *d = SDL_GetDisplays(&n);
+    if (d) { if (index >= 0 && index < n) id = d[index]; SDL_free(d); }
+    if (id == 0) id = SDL_GetPrimaryDisplay();
+    return id;
+}
+
+/* SDL2: int SDL_GetDesktopDisplayMode(int index, SDL_DisplayMode *out)  (0 == ok)
+ * SDL3: const SDL_DisplayMode *SDL_GetDesktopDisplayMode(SDL_DisplayID)
+ * Note the return convention flips too: callers testing "!= 0" for failure
+ * keep working because we return 0 on success. */
+static inline int retrodosbox_desktop_mode(int index, SDL_DisplayMode *out)
+{
+    const SDL_DisplayMode *m = (SDL_GetDesktopDisplayMode)(retrodosbox_display_id(index));
+    if (!m || !out) return -1;
+    *out = *m; return 0;
+}
+#define SDL_GetDesktopDisplayMode(i,o) retrodosbox_desktop_mode((i),(o))
+
+static inline int retrodosbox_current_mode(int index, SDL_DisplayMode *out)
+{
+    const SDL_DisplayMode *m = (SDL_GetCurrentDisplayMode)(retrodosbox_display_id(index));
+    if (!m || !out) return -1;
+    *out = *m; return 0;
+}
+#define SDL_GetCurrentDisplayMode(i,o) retrodosbox_current_mode((i),(o))
+
+static inline int retrodosbox_window_fs_mode(SDL_Window *w, SDL_DisplayMode *out)
+{
+    const SDL_DisplayMode *m = (SDL_GetWindowFullscreenMode)(w);
+    if (!m || !out) return -1;
+    *out = *m; return 0;
+}
+#define SDL_GetWindowFullscreenMode(w,o) retrodosbox_window_fs_mode((w),(o))
+
+static inline int retrodosbox_num_joysticks(void)
+{
+    int n = 0; SDL_JoystickID *j = SDL_GetJoysticks(&n); SDL_free(j); return n;
+}
+#define SDL_NumJoysticks() retrodosbox_num_joysticks()
+
+static inline const char *retrodosbox_joystick_name(int index)
+{
+    int n = 0; const char *name = NULL;
+    SDL_JoystickID *j = SDL_GetJoysticks(&n);
+    if (j) { if (index >= 0 && index < n) name = SDL_GetJoystickNameForID(j[index]); SDL_free(j); }
+    return name;
+}
+#define SDL_JoystickNameForIndex(i) retrodosbox_joystick_name(i)
+
+/* SDL2's SDL_JoystickEventState(SDL_ENABLE|SDL_DISABLE|SDL_QUERY) split into
+ * a setter and a getter in SDL3. */
+static inline int retrodosbox_joystick_event_state(int state)
+{
+    if (state == SDL_QUERY) return SDL_JoystickEventsEnabled() ? 1 : 0;
+    SDL_SetJoystickEventsEnabled(state ? true : false);
+    return state;
+}
+#define SDL_JoystickEventState(s) retrodosbox_joystick_event_state(s)
+
 #endif /* RETRODOSBOX_SDL3COMPAT_SDL_H */

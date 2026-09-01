@@ -122,11 +122,11 @@ void OUTPUT_GAMELINK_InputEvent()
                 const uint32_t mask = 1 << bit;
                 if ( ( key & mask ) && !( old & mask ) ) {
                     ev.key.type = SDL_KEYDOWN;
-                    ev.key.state = SDL_PRESSED;
+                    ev.key.down = SDL_PRESSED;
                 }
                 if ( !( key & mask ) && ( old & mask ) ) {
                     ev.key.type = SDL_KEYUP;
-                    ev.key.state = SDL_RELEASED;
+                    ev.key.down = SDL_RELEASED;
                 }
 
                 // Dispatch?

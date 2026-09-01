@@ -347,7 +347,7 @@ static void GenKBStroke(const UINT uiScanCode, const bool bDepressed, const SDLM
 #if !defined(C_SDL2)
     evntKeyStroke.key.keysym.unicode = 0;
 #endif
-    evntKeyStroke.key.state = bDepressed ? SDL_PRESSED : SDL_RELEASED;
+    evntKeyStroke.key.down = bDepressed ? SDL_PRESSED : SDL_RELEASED;
     SDL_PushEvent(&evntKeyStroke);
 }
 

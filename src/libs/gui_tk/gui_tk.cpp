@@ -2266,13 +2266,13 @@ bool ScreenSDL::event(SDL_Event &event) {
     }
 #endif
 	case SDL_KEYUP: {
-		const Key &key = SDL_to_GUI(event.key.keysym);
+		const Key &key = SDL_to_GUI(retrodosbox_keysym(&event.key));
 		if (key.special == GUI::Key::None && key.character == 0) break;
 		if (key.special == GUI::Key::CapsLock || key.special == GUI::Key::NumLock) keyDown(key);
 		return keyUp(key);
 	}
 	case SDL_KEYDOWN: {
-		const Key &key = SDL_to_GUI(event.key.keysym);
+		const Key &key = SDL_to_GUI(retrodosbox_keysym(&event.key));
         //LOG_MSG("scancode=%x, sim=%x", event.key.scancode, event.key.key);
 		if (key.special == GUI::Key::None && key.character == 0) break;
 		rc = keyDown(key);
