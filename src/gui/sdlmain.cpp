@@ -146,7 +146,7 @@ char* revert_escape_newlines(const char* aMessage);
 
 /* Implemented by the DosboxMultiplatform bridge when it is linked in. Weak so
  * a plain dosbox-x build resolves it to null and skips the call below. */
-extern "C" void DOSBOX_BRIDGE_Pump(void) __attribute__((weak));
+extern "C" void retrodos_host_pump(void) __attribute__((weak));
 
 #include "zipfile.h"
 #include "glidedef.h"
@@ -5908,7 +5908,7 @@ void GFX_Events() {
      * arrives, and Normal_Loop calls it whether or not a frame was drawn --
      * which is why the app's queue is drained here and not only when the
      * picture changes. */
-    if (DOSBOX_BRIDGE_Pump) DOSBOX_BRIDGE_Pump();
+    if (retrodos_host_pump) retrodos_host_pump();
 
 #if defined(C_SDL2) /* SDL 2.x---------------------------------- */
     //Don't poll too often. This can be heavy on the OS, especially Macs.

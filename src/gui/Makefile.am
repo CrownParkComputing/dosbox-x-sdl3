@@ -4,6 +4,7 @@ noinst_LIBRARIES = libgui.a
 libgui_a_SOURCES = \
 	sdlmain_linux.cpp \
 	sdlmain.cpp sdl_mapper.cpp dosbox_logo.h \
+	retrodos_host.cpp \
 	render.cpp render_scalers.cpp render_scalers.h \
 	render_templates.h render_loops.h render_simple.h \
 	render_templates_sai.h render_templates_hq.h \

@@ -27,7 +27,7 @@ extern uint32_t RunningProgramHash[4];
 
 /* Implemented by the DosboxMultiplatform bridge when it is linked in. Weak so
  * a plain dosbox-x build resolves it to null and skips the call below. */
-extern "C" void DOSBOX_BRIDGE_PublishFrame(const uint32_t *pixels, int32_t width,
+extern "C" void retrodos_host_frame_posted(const uint32_t *pixels, int32_t width,
                                            int32_t height, int32_t pitch_bytes,
                                            double ratio) __attribute__((weak));
 
@@ -266,8 +266,8 @@ bool OUTPUT_GAMELINK_StartUpdate(uint8_t* &pixels, Bitu &pitch)
 void OUTPUT_GAMELINK_Transfer()
 {
     //LOG_MSG("OUTPUT_GAMELINK: Transfer");
-    if (DOSBOX_BRIDGE_PublishFrame) {
-        DOSBOX_BRIDGE_PublishFrame(
+    if (retrodos_host_frame_posted) {
+        retrodos_host_frame_posted(
             (const uint32_t*)sdl.gamelink.framebuf,
             (int32_t)(sdl.clip.w + 2 * sdl.clip.x),
             (int32_t)(sdl.clip.h + 2 * sdl.clip.y),
