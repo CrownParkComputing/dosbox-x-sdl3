@@ -484,7 +484,7 @@ void PasteClipboard(bool bPressed)
 {
     if (!bPressed) return;
     SDL_SysWMinfo wmiInfo;
-    SDL_VERSION(&wmiInfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
     if (SDL_GetWMInfo(&wmiInfo) != 1||!OpenClipboard(wmiInfo.window)) return;
     if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) {CloseClipboard();return;}

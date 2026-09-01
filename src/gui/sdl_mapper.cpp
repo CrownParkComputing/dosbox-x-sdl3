@@ -5867,7 +5867,7 @@ void loadScanCode() {
 //SDL needs to be compiled to use it, else the next makes no sense.
 #ifdef C_X11_XKB
         SDL_SysWMinfo info;
-        SDL_VERSION(&info.version);
+        /* SDL3: no version handshake before SDL_GetWindowWMInfo */
         if (SDL_GetWMInfo(&info)) {
             XkbDescPtr desc = NULL;
             if((desc = XkbGetMap(info.info.x11.display,XkbAllComponentsMask,XkbUseCoreKbd))) {

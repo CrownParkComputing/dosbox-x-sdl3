@@ -1335,7 +1335,11 @@ void MIXER_Init() {
         (unsigned int)obtained.freq,
         (unsigned int)mixer.freq,
         (unsigned int)obtained.channels,
+#if defined(C_SDL3)
+        (unsigned int)mixer.blocksize, /* SDL3: the stream owns buffering; no negotiated size */
+#else
         (unsigned int)obtained.samples,
+#endif
         (unsigned int)0,
         (unsigned int)0,
         (unsigned int)0,

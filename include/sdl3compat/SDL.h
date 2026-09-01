@@ -269,4 +269,137 @@ static inline int retrodosbox_joystick_event_state(int state)
 }
 #define SDL_JoystickEventState(s) retrodosbox_joystick_event_state(s)
 
+/* ---------------------------------------------------------------------- */
+/* Vendored SDL_sound decoders (src/libs/decoders)                         */
+/* ---------------------------------------------------------------------- */
+/* These live here, not in our SDL_audio.h forwarder: SDL3's own SDL.h
+ * includes <SDL3/SDL_audio.h> directly, so the forwarder is never reached by
+ * anything that includes SDL.h. */
+
+/* SDL3 dropped the UNSIGNED 16-bit audio formats; only U8 and the signed
+ * formats remain. The decoders still name them in conversion tables. SDL2's
+ * numeric values are free now, so the branches compile and stay dead --
+ * SDL3 can never report a U16 format. */
+#ifndef AUDIO_U16LSB
+#define AUDIO_U16LSB ((SDL_AudioFormat)0x0010)
+#define AUDIO_U16MSB ((SDL_AudioFormat)0x1010)
+#define AUDIO_U16    AUDIO_U16LSB
+#if SDL_BYTEORDER == SDL_LIL_ENDIAN
+#define AUDIO_U16SYS AUDIO_U16LSB
+#else
+#define AUDIO_U16SYS AUDIO_U16MSB
+#endif
+#endif
+
+/* SDL2: SDL_RWread(ctx, ptr, size, maxnum) -> number of OBJECTS read.
+ * SDL3: SDL_ReadIO(ctx, ptr, size_in_bytes) -> number of BYTES read.
+ * SDL_oldnames.h maps the NAME but cannot fix the arity or the unit, so the
+ * mapping must be replaced rather than relied upon. */
+static inline size_t retrodosbox_rwread(SDL_IOStream *ctx, void *ptr,
+                                        size_t size, size_t maxnum)
+{
+    size_t got;
+    if (size == 0 || maxnum == 0) return 0;
+    got = SDL_ReadIO(ctx, ptr, size * maxnum);
+    return got / size;
+}
+#undef SDL_RWread
+#define SDL_RWread(c,p,s,n) retrodosbox_rwread((c),(p),(size_t)(s),(size_t)(n))
+
+static inline size_t retrodosbox_rwwrite(SDL_IOStream *ctx, const void *ptr,
+                                         size_t size, size_t num)
+{
+    size_t put;
+    if (size == 0 || num == 0) return 0;
+    put = SDL_WriteIO(ctx, ptr, size * num);
+    return put / size;
+}
+#undef SDL_RWwrite
+#define SDL_RWwrite(c,p,s,n) retrodosbox_rwwrite((c),(p),(size_t)(s),(size_t)(n))
+
+/* whence became a typed enum; the decoders pass a plain int. */
+#undef SDL_RWseek
+#define SDL_RWseek(c,o,w) SDL_SeekIO((c),(o),(SDL_IOWhence)(w))
+
+/* ---------------------------------------------------------------------- */
+/* Remaining shape changes                                                 */
+/* ---------------------------------------------------------------------- */
+
+/* SDL2: SDL_CreateRGBSurfaceFrom(pixels,w,h,depth,pitch,Rmask,...,Amask)
+ * SDL3: SDL_CreateSurfaceFrom(w,h,format,pixels,pitch) -- note the order. */
+static inline SDL_Surface *retrodosbox_create_rgb_surface_from(
+        void *pixels, int w, int h, int depth, int pitch,
+        Uint32 rmask, Uint32 gmask, Uint32 bmask, Uint32 amask)
+{
+    return SDL_CreateSurfaceFrom(w, h,
+        SDL_GetPixelFormatForMasks(depth, rmask, gmask, bmask, amask),
+        pixels, pitch);
+}
+#define SDL_CreateRGBSurfaceFrom(px,w,h,d,p,r,g,b,a) \
+    retrodosbox_create_rgb_surface_from((px),(w),(h),(d),(p),(r),(g),(b),(a))
+
+/* SDL3 added a scale mode argument. SDL_oldnames.h maps the name only. */
+#undef SDL_UpperBlitScaled
+#define SDL_UpperBlitScaled(s,sr,d,dr) \
+    SDL_BlitSurfaceScaled((s),(sr),(d),(dr),SDL_SCALEMODE_NEAREST)
+
+/* SDL2's pause flag became explicit Pause/Resume calls. */
+static inline bool retrodosbox_pause_audio_device(SDL_AudioDeviceID dev, int pause_on)
+{
+    return pause_on ? SDL_PauseAudioDevice(dev) : SDL_ResumeAudioDevice(dev);
+}
+#define SDL_PauseAudioDevice(d,p) retrodosbox_pause_audio_device((d),(p))
+
+/* SDL3 added an out-param for the modifier state. */
+#define SDL_GetScancodeFromKey(k) (SDL_GetScancodeFromKey)((k), NULL)
+
+/* Removed init flags: SDL3 always has the timer subsystem, and the crash
+ * "parachute" concept is gone entirely. */
+#ifndef SDL_INIT_TIMER
+#define SDL_INIT_TIMER 0
+#endif
+#ifndef SDL_INIT_NOPARACHUTE
+#define SDL_INIT_NOPARACHUTE 0
+#endif
+
+/* SDL2: SDL_MapRGB(const SDL_PixelFormat *fmt, r, g, b)
+ * SDL3: SDL_MapRGB(const SDL_PixelFormatDetails*, const SDL_Palette*, r, g, b)
+ * Call sites pass a surface's format, which is now an enum. NULL palette is
+ * correct for the non-indexed surfaces these are used on. */
+#define SDL_MapRGB(fmt,r,g,b) \
+    (SDL_MapRGB)(SDL_GetPixelFormatDetails(fmt), NULL, (r),(g),(b))
+#define SDL_MapRGBA(fmt,r,g,b,a) \
+    (SDL_MapRGBA)(SDL_GetPixelFormatDetails(fmt), NULL, (r),(g),(b),(a))
+#define SDL_GetRGB(pix,fmt,r,g,b) \
+    (SDL_GetRGB)((pix), SDL_GetPixelFormatDetails(fmt), NULL, (r),(g),(b))
+#define SDL_GetRGBA(pix,fmt,r,g,b,a) \
+    (SDL_GetRGBA)((pix), SDL_GetPixelFormatDetails(fmt), NULL, (r),(g),(b),(a))
+/* NOTE: these four take the surface's FORMAT ENUM, which is what almost every
+ * call site passes. Code that already holds a const SDL_PixelFormatDetails*
+ * must bypass the macro with the parenthesised form, e.g.
+ *     (SDL_MapRGBA)(details, NULL, r,g,b,a)
+ * -- see gui_tk.cpp, which caches the details pointer across a blit loop. */
+
+/* Same scale-mode argument as SDL_UpperBlitScaled; oldnames maps the name only. */
+#undef SDL_BlitScaled
+#define SDL_BlitScaled(s,sr,d,dr) \
+    SDL_BlitSurfaceScaled((s),(sr),(d),(dr),SDL_SCALEMODE_NEAREST)
+
+/* SDL2: SDL_GetVersion(SDL_version *out), a struct of major/minor/patch.
+ * SDL3: int SDL_GetVersion(void), a packed number. */
+typedef struct SDL_version { Uint8 major, minor, patch; } SDL_version;
+static inline void retrodosbox_get_version(SDL_version *v)
+{
+    const int n = (SDL_GetVersion)();
+    v->major = (Uint8)SDL_VERSIONNUM_MAJOR(n);
+    v->minor = (Uint8)SDL_VERSIONNUM_MINOR(n);
+    v->patch = (Uint8)SDL_VERSIONNUM_MICRO(n);
+}
+#define SDL_GetVersion(v) retrodosbox_get_version(v)
+
+/* SDL3 dropped warp-based relative mouse mode; centering is the survivor. */
+#ifndef SDL_HINT_MOUSE_RELATIVE_MODE_WARP
+#define SDL_HINT_MOUSE_RELATIVE_MODE_WARP SDL_HINT_MOUSE_RELATIVE_MODE_CENTER
+#endif
+
 #endif /* RETRODOSBOX_SDL3COMPAT_SDL_H */

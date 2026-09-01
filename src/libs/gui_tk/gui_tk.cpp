@@ -2143,10 +2143,12 @@ public:
 	}
 
     static bool get_dest_pix
-    (   char* sp, SDL_PixelFormat *sf, SDL_PixelFormat *df, Uint32* pix )
+    (   char* sp, const SDL_PixelFormatDetails *sf, const SDL_PixelFormatDetails *df, Uint32* pix )
     {   Uint8 r, g, b, a;
-               SDL_GetRGBA( *(Uint32*)sp, sf, &r, &g, &b, &a );
-        *pix = SDL_MapRGBA( df, r, g, b, a );
+        /* sf/df are already SDL_PixelFormatDetails*, so bypass the enum-taking
+         * macros in sdl3compat/SDL.h with the parenthesised form. */
+               (SDL_GetRGBA)( *(Uint32*)sp, sf, NULL, &r, &g, &b, &a );
+        *pix = (SDL_MapRGBA)( df, NULL, r, g, b, a );
         return a>0;
     }
 
@@ -2154,7 +2156,7 @@ public:
         char            *dp, *sp, *sr0, *dr, *dr0;
         int              x, y, v, h;
         uint32_t         pix;
-        SDL_PixelFormat *fmt, *df;
+        const SDL_PixelFormatDetails *fmt, *df; /* SDL3: format is an enum; details come from SDL_GetPixelFormatDetails */
         bool             is_alpha;
 
         // Direct blitting for pixel-to-pixel scale:
@@ -2163,8 +2165,8 @@ public:
             return;
         }
 
-        fmt  = surface->format;
-        df   = dest   ->format;
+        fmt  = SDL_GetPixelFormatDetails(surface->format);
+        df   = SDL_GetPixelFormatDetails(dest   ->format);
         SDL_LockSurface( dest    );
         SDL_LockSurface( surface );
         dr0 = (char*)dest   ->pixels;
@@ -2177,10 +2179,10 @@ public:
             {   is_alpha = get_dest_pix( sp, fmt, df, &pix );
                 for( h = 0; h < scale; h += 1 )
                 {   if( is_alpha )
-                    {   memcpy( dp, &pix, df->BytesPerPixel );  }
-                    dp += df->BytesPerPixel;
+                    {   memcpy( dp, &pix, df->bytes_per_pixel );  }
+                    dp += df->bytes_per_pixel;
                 }
-                sp += fmt->BytesPerPixel;
+                sp += fmt->bytes_per_pixel;
             }
             sr0 = sr0 + surface->pitch;
             

@@ -57,6 +57,20 @@ typedef struct SDL_SysWMinfo {
     } info;
 } SDL_SysWMinfo;
 
+/* SDL2 delivered native window-system messages through SDL_SYSWMEVENT with an
+ * SDL_SysWMmsg payload. SDL3 removed the whole mechanism (Win32 hooks go
+ * through SDL_SetWindowsMessageHook instead). menu.cpp still declares a
+ * handler taking one, so the type must exist; the Win32 body behind it is
+ * compiled only on WIN32, and nothing constructs one of these on Linux. */
+typedef struct SDL_SysWMmsg {
+    Uint32         version;
+    SDL_SYSWM_TYPE subsystem;
+    union {
+        struct { void *hwnd; unsigned int msg; Uint64 wParam; Sint64 lParam; } win;
+        int dummy;
+    } msg;
+} SDL_SysWMmsg;
+
 /* SDL2 spelled this SDL_VERSION(&info.version) before SDL_GetWindowWMInfo(). */
 #ifndef SDL_VERSION
 #define SDL_VERSION(x) do { *(Uint32*)(x) = (Uint32)SDL_VERSIONNUM(SDL_MAJOR_VERSION,SDL_MINOR_VERSION,SDL_MICRO_VERSION); } while (0)

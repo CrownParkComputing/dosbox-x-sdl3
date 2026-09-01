@@ -559,6 +559,12 @@ if test x"$enable_sdl3" = xyes; then
         dnl was indistinguishable from SDL1 in the source. dosbox.h keys its
         dnl "define C_SDL2 so SDL1 code does not compile" hack off this.
         AC_DEFINE(C_SDL3,1,[Define to 1 to use SDL 3.x])
+        dnl dosbox.h carries upstream's "define C_SDL2 so SDL1 code does not
+        dnl compile" hack, but only files that include dosbox.h ever see it.
+        dnl sdlmain_linux.cpp includes just config.h, so it was silently taking
+        dnl the SDL1 branches (SDL_GetWMInfo, one-arg SDL_VERSION) and failing.
+        dnl Defining it here puts it in config.h, which every source includes.
+        AC_DEFINE(C_SDL2,1,[SDL3 builds compile the SDL2-era code paths])
         AC_MSG_NOTICE([Building with SDL3])
     else
         AC_MSG_ERROR([--enable-sdl3 was specified, but SDL3 was not found])

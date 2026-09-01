@@ -23,7 +23,11 @@
 #include "programs.h"
 
 #include <SDL.h>
-#if SDL_VERSION_ATLEAST(2, 0, 0)
+/* SDL_VERSION_ATLEAST(2,0,0) is true on SDL3 as well, so the SDL2 arm used to
+ * claim "SDL2" in the version banner of an SDL3 build. Check SDL3 first. */
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+#define SDL_STRING "SDL3"
+#elif SDL_VERSION_ATLEAST(2, 0, 0)
 #define SDL_STRING "SDL2"
 #else
 #define SDL_STRING "SDL1"

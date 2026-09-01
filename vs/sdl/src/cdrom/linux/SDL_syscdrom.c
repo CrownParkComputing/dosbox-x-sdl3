@@ -280,7 +280,9 @@ int  SDL_SYS_CDInit(void)
 	SDL_CDcaps.Close = SDL_SYS_CDClose;
 
 	/* Look in the environment for our CD-ROM drive list */
-	SDLcdrom = SDL_getenv("SDL_CDROM");	/* ':' separated list of devices */
+	/* SDL3's SDL_getenv returns const char*; SDL2's did not. CheckDrive()/
+	 * AddDrive() below take char*, and neither writes through it. */
+	SDLcdrom = (char *)SDL_getenv("SDL_CDROM");	/* ':' separated list of devices */
 	if ( SDLcdrom != NULL ) {
 		char *cdpath, *delim;
 		size_t len = SDL_strlen(SDLcdrom)+1;

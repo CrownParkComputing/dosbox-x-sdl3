@@ -934,7 +934,7 @@ void UpdateWindowDimensions(void)
     if (sdl.window != NULL) {
         SDL_SysWMinfo wmi;
         memset(&wmi, 0, sizeof(wmi));
-        SDL_VERSION(&wmi.version);
+        /* SDL3: no version handshake before SDL_GetWindowWMInfo */
         if (SDL_GetWindowWMInfo(sdl.window, &wmi)) {
             hwnd = wmi.info.os2.hwnd;
             if (hwnd != 0) {
@@ -1014,7 +1014,7 @@ const char *modifier;
 #if defined(WIN32)
 HWND GetHWND(void) {
     SDL_SysWMinfo wmi;
-    SDL_VERSION(&wmi.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 # if defined(C_SDL2)
     if (sdl.window == NULL)
         return nullptr;
@@ -1034,7 +1034,7 @@ HWND GetSurfaceHWND(void) {
     return GetHWND();
 # else
     SDL_SysWMinfo wmi;
-    SDL_VERSION(&wmi.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
     if (!SDL_GetWMInfo(&wmi)) {
         return NULL;
@@ -1861,9 +1861,9 @@ SDL_Window* GFX_SetSDLWindowMode(uint16_t width, uint16_t height, SCREEN_TYPES s
             SDL_DestroyWindow(sdl.window);
         }
 
+        /* SDL3 dropped the x/y arguments from SDL_CreateWindow; a window is
+         * placed after creation (see SDL_SetWindowPosition below). */
         sdl.window = SDL_CreateWindow("",
-                                      SDL_WINDOWPOS_UNDEFINED_DISPLAY(sdl.displayNumber?sdl.displayNumber-1:0),
-                                      SDL_WINDOWPOS_UNDEFINED_DISPLAY(sdl.displayNumber?sdl.displayNumber-1:0),
                                       width, height,
                                       (GFX_IsFullscreen() ? (sdl.desktop.full.display_res ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_FULLSCREEN) : 0)
                                       | ((screenType == SCREEN_OPENGL) ? SDL_WINDOW_OPENGL : 0) | (maximize && !TTF_using()? SDL_WINDOW_MAXIMIZED : 0)
@@ -4323,7 +4323,7 @@ static void GUI_StartUp() {
     }
     //SDL_Rect splash_rect=GFX_GetSDLSurfaceSubwindowDims(640,400);
     sdl.desktop.pixelFormat = SDL_GetWindowPixelFormat(sdl.window);
-    LOG_MSG("SDL: Current window pixel format: %s", SDL_GetPixelFormatName(sdl.desktop.pixelFormat));
+    LOG_MSG("SDL: Current window pixel format: %s", SDL_GetPixelFormatName((SDL_PixelFormat)sdl.desktop.pixelFormat));
     sdl.desktop.bpp=8*SDL_BYTESPERPIXEL(sdl.desktop.pixelFormat);
     if (SDL_BITSPERPIXEL(sdl.desktop.pixelFormat) == 24)
         LOG_MSG("SDL: You are running in 24 bpp mode, this will slow down things!");
@@ -4988,7 +4988,7 @@ static void HandleMouseButton(SDL_MouseButtonEvent * button, SDL_MouseMotionEven
     }
 
     if (button->button == SDL_BUTTON_LEFT) {
-        if (button->state == SDL_PRESSED) {
+        if (button->down) {
             GFX_SDLMenuTrackHilight(mainMenu,mainMenu.menuUserHoverAt);
             if (mainMenu.menuUserHoverAt != DOSBoxMenu::unassigned_item_handle && mainMenu.get_item(mainMenu.menuUserHoverAt).is_enabled()) {
                 std::vector<DOSBoxMenu::item_handle_t> popup_stack;
@@ -5472,7 +5472,7 @@ static void HandleMouseButton(SDL_MouseButtonEvent * button, SDL_MouseMotionEven
     else if (!inMenu)
         inputToScreen = GFX_CursorInOrNearScreen(button->x, button->y);
 
-    switch (button->state) {
+    switch (button->down ? SDL_PRESSED : SDL_RELEASED) {
     case SDL_PRESSED:
         if (inMenu || !inputToScreen) return;
 #if defined(WIN32) || defined(MACOSX) || defined(C_SDL2)
@@ -8048,7 +8048,7 @@ void SetWindowTransparency(int trans) {
     Window window;
     SDL_SysWMinfo wminfo;
     memset(&wminfo,0,sizeof(wminfo));
-    SDL_VERSION(&wminfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
     if (SDL_GetWMInfo(&wminfo) >= 0) {
         dpy = wminfo.info.x11.display;
         if (!dpy) return;

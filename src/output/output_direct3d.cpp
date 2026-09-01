@@ -43,7 +43,7 @@ void d3d_init(void)
     }
 
     SDL_SysWMinfo wmi;
-    SDL_VERSION(&wmi.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     if (!SDL_GetWindowWMInfo(sdl.window, &wmi))

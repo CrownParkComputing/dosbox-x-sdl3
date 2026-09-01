@@ -92,7 +92,7 @@ void LinuxX11_OnTop(bool f) {
 
     SDL_SysWMinfo wminfo;
     memset(&wminfo,0,sizeof(wminfo));
-    SDL_VERSION(&wminfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     SDL_Window* GFX_GetSDLWindow(void);
@@ -168,7 +168,7 @@ char *LinuxX11_KeySymName(Uint32 x) {
 
     SDL_SysWMinfo wminfo;
     memset(&wminfo,0,sizeof(wminfo));
-    SDL_VERSION(&wminfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     SDL_Window* GFX_GetSDLWindow(void);
@@ -197,7 +197,7 @@ void Linux_JPXKBFix(void) {
 #if !defined(C_SDL2) && defined(SDL_DOSBOX_X_SPECIAL)
     SDL_SysWMinfo wminfo;
     memset(&wminfo,0,sizeof(wminfo));
-    SDL_VERSION(&wminfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
     if (SDL_GetWMInfo(&wminfo) >= 0) {
 # if C_X11
 #  if C_X11_XKB
@@ -244,7 +244,7 @@ unsigned int Linux_GetKeyboardLayout(void) {
 
     SDL_SysWMinfo wminfo;
     memset(&wminfo,0,sizeof(wminfo));
-    SDL_VERSION(&wminfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     SDL_Window* GFX_GetSDLWindow(void);
@@ -346,7 +346,7 @@ unsigned int Linux_GetKeyboardLayout(void) {
 void UpdateWindowDimensions_Linux(void) {
     SDL_SysWMinfo wminfo;
     memset(&wminfo,0,sizeof(wminfo));
-    SDL_VERSION(&wminfo.version);
+    /* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     SDL_Window* GFX_GetSDLWindow(void);
@@ -581,7 +581,7 @@ void Linux_GetWindowDPI(ScreenSizeInfo &info) {
 
 	SDL_SysWMinfo wminfo;
 	memset(&wminfo,0,sizeof(wminfo));
-	SDL_VERSION(&wminfo.version);
+	/* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     SDL_Window* GFX_GetSDLWindow(void);
@@ -680,7 +680,7 @@ void Linux_GetDesktopResolution(int *width,int *height) {
 	/* We're most likely running on an X-windows desktop (through SDL). */
 	SDL_SysWMinfo wminfo;
 	memset(&wminfo,0,sizeof(wminfo));
-	SDL_VERSION(&wminfo.version);
+	/* SDL3: no version handshake before SDL_GetWindowWMInfo */
 
 #if defined(C_SDL2)
     SDL_Window* GFX_GetSDLWindow(void);
