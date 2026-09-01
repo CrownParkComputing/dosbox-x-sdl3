@@ -1,3 +1,9 @@
+/* Retro-Dosbox (sdl3 branch): this build has no DOSBox-X menu -- the UI is our
+ * ImGui RMU and the engine is headless behind the gamelink output. Make menu
+ * item lookups non-fatal so a cleared menu cannot abort a second session in the
+ * same process. See the sink comment at DOSBoxMenu::get_item(). */
+#define RETRODOSBOX_MENU_SINK 1
+
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
@@ -974,16 +980,52 @@ DOSBoxMenu::item_handle_t DOSBoxMenu::get_item_id_by_name(const std::string &nam
     return i->second;
 }
 
+#if defined(RETRODOSBOX_MENU_SINK)
+/* Retro-Dosbox: this build has NO DOSBox-X menu -- the UI is our ImGui RMU, and
+ * the engine runs headless behind the gamelink output. Menu bookkeeping is
+ * therefore write-only: dozens of call sites across cpu/render/sdlmain do
+ *
+ *     mainMenu.get_item("mapper_xxx").check(...).enable(...)
+ *
+ * purely to keep a menu nobody draws in sync.
+ *
+ * Upstream makes a miss FATAL (E_Exit). That is reasonable when the menu is the
+ * UI, but for us it turns "the menu was cleared at shutdown and a module's
+ * one-shot init guard skipped re-registration" into a hard abort on the SECOND
+ * session in a process -- which is exactly what blocks in-process restart, and
+ * therefore iOS "quit to library".
+ *
+ * So a miss returns a scratch item instead. Writes to it go nowhere, which is
+ * correct: there is no menu to update. This does not paper over emulation bugs
+ * -- nothing here affects the emulated machine, only menu decoration. */
+static DOSBoxMenu::item retrodosbox_menu_sink;
+#endif
+
 DOSBoxMenu::item& DOSBoxMenu::get_item(const std::string &name) {
     const item_handle_t handle = get_item_id_by_name(name);
 
-    if (handle == unassigned_item_handle)
+    if (handle == unassigned_item_handle) {
+#if defined(RETRODOSBOX_MENU_SINK)
+        return retrodosbox_menu_sink;
+#else
         E_Exit("DOSBoxMenu::get_item() No such item '%s'",name.c_str());
+#endif
+    }
 
     return get_item(handle);
 }
 
 DOSBoxMenu::item& DOSBoxMenu::get_item(const item_handle_t i) {
+#if defined(RETRODOSBOX_MENU_SINK)
+    /* See the sink comment above: a stale handle from a previous session must
+     * not be fatal in a build with no menu. */
+    if (i == unassigned_item_handle || i >= master_list.size())
+        return retrodosbox_menu_sink;
+    if (!master_list[(size_t)i].status.allocated ||
+        master_list[(size_t)i].master_id == unassigned_item_handle ||
+        master_list[(size_t)i].master_id != i)
+        return retrodosbox_menu_sink;
+#endif
     if (i == unassigned_item_handle)
         E_Exit("DOSBoxMenu::get_item() attempt to get unassigned handle");
     else if (i >= master_list.size())

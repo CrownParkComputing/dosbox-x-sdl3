@@ -3598,6 +3598,15 @@ class CPU: public Module_base {
 private:
 	static bool inited;
 public:
+	/* Engine teardown must clear this. It gates the one-time registration below
+	 * -- including MAPPER_AddHandler("cycauto"), which is what ALLOCATES the
+	 * "mapper_cycauto" menu item -- while shutdown DOES clear the menu
+	 * (sdlmain.cpp calls mainMenu.clear_all_menu_items()). Left set, a second
+	 * dosbox_x_main() in the same process takes the `if(inited)` shortcut,
+	 * never re-registers, and then Change_Config -> menu_update_autocycle asks
+	 * for an item that no longer exists: "No such item 'mapper_cycauto'". */
+	static void reset_inited(void) { inited = false; }
+
 	CPU(Section* configuration):Module_base(configuration) {
 		const Section_prop * section=static_cast<Section_prop *>(configuration);
 		DOSBoxMenu::item *item;
@@ -4291,6 +4300,11 @@ void CPU_ShutDown(Section* sec) {
 	CPU_Core_Dynrec_Cache_Close();
 #endif
 	delete test;
+	/* CPU_PreInit() asserts test == NULL, so leaving it dangling makes a second
+	 * dosbox_x_main() in the same process abort. 17 of the 21 modules using this
+	 * singleton pattern already null it here; this one did not. */
+	test = NULL;
+	CPU::reset_inited();
 }
 
 void CPU_OnReset(Section* sec) {

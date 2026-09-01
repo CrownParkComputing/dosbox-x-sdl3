@@ -458,6 +458,7 @@ static GLIDE* test;
 void GLIDE_ShutDown(Section* sec) {
     (void)sec;//UNUSED
     delete test;
+    test = NULL; /* see CPU_ShutDown: PreInit asserts this is NULL */
 }
 
 void GLIDE_PowerOn(Section* sec) {

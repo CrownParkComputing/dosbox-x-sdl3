@@ -4767,8 +4767,24 @@ void MAPPER_AddHandler(MAPPER_Handler * handler,MapKeys key,Bitu mods,char const
     //Check if it already exists=> if so return.
     for(CHandlerEventVector_it it=handlergroup.begin();it!=handlergroup.end();++it) {
         if(strcmp((*it)->buttonname,buttonname) == 0) {
-            if (ret_menuitem != NULL)
-                *ret_menuitem = &mainMenu.get_item(std::string("mapper_") + std::string(eventname));
+            if (ret_menuitem != NULL) {
+                const std::string mname = std::string("mapper_") + std::string(eventname);
+                /* Asymmetric teardown: engine shutdown calls
+                 * mainMenu.clear_all_menu_items() (sdlmain.cpp) but leaves
+                 * handlergroup populated. So on a SECOND dosbox_x_main() in the
+                 * same process we land here -- handler still registered -- and
+                 * the menu item it names no longer exists, which made get_item()
+                 * E_Exit with "No such item 'mapper_cycauto'". Recreate it
+                 * instead of demanding it still be there. */
+                if (!mainMenu.item_exists(mname)) {
+                    DOSBoxMenu::item &mi =
+                        mainMenu.alloc_item(DOSBoxMenu::item_type_id, mname);
+                    mi.set_mapper_event(tempname);
+                    *ret_menuitem = &mi;
+                } else {
+                    *ret_menuitem = &mainMenu.get_item(mname);
+                }
+            }
 
             return;
         }
@@ -6039,6 +6055,15 @@ void MAPPER_Shutdown() {
         }
     }
     handlergroup.clear();
+
+    /* mod_event[] holds copies of pointers that live in events[], which the
+     * loop above has just deleted. Clearing events[] alone leaves these
+     * dangling, and CBind::GetModifierText() only NULL-checks them -- so a
+     * second MAPPER_Init() in the same process reads freed memory and
+     * segfaults in CreateDefaultBinds(). */
+    for (size_t i=0;i < (sizeof(mod_event)/sizeof(mod_event[0]));i++)
+        mod_event[i] = NULL;
+
     initjoy=true;
 }
 

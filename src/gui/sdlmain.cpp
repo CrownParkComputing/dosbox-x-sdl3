@@ -143,6 +143,11 @@ char* revert_escape_newlines(const char* aMessage);
 #include "ptrop.h"
 #include "mapper.h"
 #include "sdlmain.h"
+
+/* Implemented by the DosboxMultiplatform bridge when it is linked in. Weak so
+ * a plain dosbox-x build resolves it to null and skips the call below. */
+extern "C" void DOSBOX_BRIDGE_Pump(void) __attribute__((weak));
+
 #include "zipfile.h"
 #include "glidedef.h"
 #include "bios_disk.h"
@@ -2113,6 +2118,10 @@ unsigned int GFX_GetBShift() {
 
 void GFX_LogSDLState(void)
 {
+    /* EXPERIMENT (restart-in-process): after a full engine teardown sdl.surface
+     * is freed but not nulled, so a SECOND dosbox_x_main() in the same process
+     * crashes here -- while merely logging. Guard it. */
+    if (sdl.surface == NULL) return;
     LOG(LOG_MISC,LOG_DEBUG)("SDL video mode: %ux%u (clip %ux%u with upper-left at %ux%u) %ubpp",
         (unsigned)sdl.surface->w,(unsigned)sdl.surface->h,
         (unsigned)sdl.clip.w,(unsigned)sdl.clip.h,
@@ -5895,6 +5904,12 @@ bool gfx_in_mapper = false;
 
 void GFX_Events() {
     CheckMapperKeyboardLayout();
+    /* The bridge's tick-rate pump. GFX_Events() is where a real user's input
+     * arrives, and Normal_Loop calls it whether or not a frame was drawn --
+     * which is why the app's queue is drained here and not only when the
+     * picture changes. */
+    if (DOSBOX_BRIDGE_Pump) DOSBOX_BRIDGE_Pump();
+
 #if defined(C_SDL2) /* SDL 2.x---------------------------------- */
     //Don't poll too often. This can be heavy on the OS, especially Macs.
     //In idle mode 3000-4000 polls are done per second without this check.
@@ -10578,6 +10593,12 @@ fresh_boot:
 #endif
         FreeBIOSDiskList();
         MAPPER_Shutdown();
+        /* GUI_StartUp() is one-shot on this flag, and it is what registers the
+         * mapper handlers that ALLOCATE menu items ("mapper_incsize" and
+         * friends). Shutdown clears the menu, so leaving the flag set makes a
+         * second dosbox_x_main() skip re-registration and then E_Exit on
+         * "No such item". Reset it so the next session rebuilds them. */
+        has_GUI_StartUp = false;
         VFILE_Shutdown();
         PROGRAMS_Shutdown();
         TIMER_ShutdownTickHandlers();
@@ -10781,4 +10802,12 @@ void POD_Load_Sdlmain( std::istream& stream )
 	// - pure data
 	READ_POD( &sdl.mouse.autolock, sdl.mouse.autolock );
 	READ_POD( &sdl.mouse.requestlock, sdl.mouse.requestlock );
+}
+
+
+/* Entry point for the DosboxMultiplatform bridge, which runs the engine on a
+ * background thread. Calling main() directly from C++ is not permitted by the
+ * standard, so it gets its own name. */
+extern "C" int dosbox_x_main(int argc, char *argv[]) {
+    return main(argc, argv);
 }

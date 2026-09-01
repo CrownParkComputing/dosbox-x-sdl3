@@ -24,6 +24,13 @@
 using namespace std;
 
 extern uint32_t RunningProgramHash[4];
+
+/* Implemented by the DosboxMultiplatform bridge when it is linked in. Weak so
+ * a plain dosbox-x build resolves it to null and skips the call below. */
+extern "C" void DOSBOX_BRIDGE_PublishFrame(const uint32_t *pixels, int32_t width,
+                                           int32_t height, int32_t pitch_bytes,
+                                           double ratio) __attribute__((weak));
+
 #if !defined(C_SDL2)
 #error "gamelink output requires SDL2"
 #endif
@@ -259,6 +266,15 @@ bool OUTPUT_GAMELINK_StartUpdate(uint8_t* &pixels, Bitu &pitch)
 void OUTPUT_GAMELINK_Transfer()
 {
     //LOG_MSG("OUTPUT_GAMELINK: Transfer");
+    if (DOSBOX_BRIDGE_PublishFrame) {
+        DOSBOX_BRIDGE_PublishFrame(
+            (const uint32_t*)sdl.gamelink.framebuf,
+            (int32_t)(sdl.clip.w + 2 * sdl.clip.x),
+            (int32_t)(sdl.clip.h + 2 * sdl.clip.y),
+            (int32_t)sdl.gamelink.pitch,
+            render.src.ratio);
+    }
+
     GameLink::Out( (uint16_t)sdl.clip.w+2*sdl.clip.x, (uint16_t)sdl.clip.h+2*sdl.clip.y, render.src.ratio,
         sdl.gamelink.want_mouse,
         RunningProgram.c_str(),

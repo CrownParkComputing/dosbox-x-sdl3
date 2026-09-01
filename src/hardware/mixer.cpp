@@ -670,6 +670,14 @@ static inline bool Mixer_irq_important(void) {
 #endif
 
 unsigned long long mixer_sample_counter = 0;
+/* DosboxMultiplatform bridge audio backend. Declared weak at file scope:
+ * C++ forbids an extern "C" linkage specification inside a function body, and
+ * these must be weak so a plain dosbox-x build (which does not link the
+ * backend) resolves them to null and behaves exactly as before. */
+extern "C" int audio_backend_init(int, int, int, int *, int *) __attribute__((weak));
+extern "C" void audio_backend_write(const int16_t *, int) __attribute__((weak));
+
+
 double mixer_start_pic_time = 0;
 
 /* once a millisecond, render 1ms of audio, up to whole samples */
@@ -714,6 +722,31 @@ static void MIXER_MixData(Bitu fracs/*render up to*/) {
             }
 
             readpos++;
+        }
+    }
+
+    /* DosboxMultiplatform bridge: hand the freshly-mixed samples to the
+     * platform audio backend instead of SDL's callback. converted with
+     * mastervol exactly as MIXER_CallBack does. Weak: skipped in a plain
+     * dosbox-x build. readpos does not wrap within one MIXER_MixData call --
+     * whole <= samples_this_ms.w and MIXER_Mix asserts work_in + that <=
+     * MIXER_BUFSIZE -- so the same no-wrap assumption as the capture block
+     * below holds. */
+    if (audio_backend_write) {
+        int32_t volscale1 = (int32_t)(mixer.mastervol[0] * (1 << MIXER_VOLSHIFT));
+        int32_t volscale2 = (int32_t)(mixer.mastervol[1] * (1 << MIXER_VOLSHIFT));
+        Bitu pending = whole - prev_rendered;
+        Bitu readpos = mixer.work_in + prev_rendered;
+        while (pending > 0) {
+            Bitu chunk = pending > 1024 ? 1024 : pending;
+            int16_t convert[1024][2];
+            for (Bitu i = 0; i < chunk; i++) {
+                convert[i][0] = MIXER_CLIP(((int64_t)mixer.work[readpos][0] * (int64_t)volscale1) >> (MIXER_VOLSHIFT + MIXER_VOLSHIFT));
+                convert[i][1] = MIXER_CLIP(((int64_t)mixer.work[readpos][1] * (int64_t)volscale2) >> (MIXER_VOLSHIFT + MIXER_VOLSHIFT));
+                readpos++;
+            }
+            audio_backend_write((const int16_t *)convert, (int)chunk);
+            pending -= chunk;
         }
     }
 
@@ -1136,16 +1169,39 @@ void MIXER_Init() {
     spec.userdata=NULL;
     spec.samples=(Uint16)mixer.blocksize;
 
+    /* DosboxMultiplatform bridge: substitute the platform audio backend for
+     * SDL's audio output. audio_backend_init is declared weak at file scope
+     * (above), so dosbox_audio_backend is false in a plain dosbox-x build and
+     * the SDL path below runs unchanged. */
+    const bool dosbox_audio_backend = (audio_backend_init != NULL);
+
+
+
 #ifdef C_SDL2
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
+    if (!dosbox_audio_backend && SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
+
         LOG(LOG_MISC,LOG_DEBUG)("MIXER:Can't initialize SDL audio: %s , running in nosound mode.",SDL_GetError());
         mixer.nosound = true;
     }
 #endif
 
-    if (mixer.nosound) {
+    if (dosbox_audio_backend) {
+        int ab_freq = 0, ab_blocksize = 0;
+        if (audio_backend_init((int)mixer.freq, (int)mixer.blocksize, spec.channels,
+                               &ab_freq, &ab_blocksize) == 0) {
+            mixer.freq = (unsigned int)ab_freq;
+            if (ab_blocksize > 0) mixer.blocksize = (unsigned int)ab_blocksize;
+            TIMER_AddTickHandler(MIXER_Mix);
+            if (mixer.sampleaccurate) PIC_AddEvent(MIXER_MixSingle, 1000.0 / mixer.freq);
+        } else {
+            mixer.nosound = true;
+            LOG(LOG_MISC,LOG_DEBUG)("MIXER:Can't open audio backend, running in nosound mode.");
+            TIMER_AddTickHandler(MIXER_Mix);
+        }
+    } else if (mixer.nosound) {
         LOG(LOG_MISC,LOG_DEBUG)("MIXER:No Sound Mode Selected.");
         TIMER_AddTickHandler(MIXER_Mix);
+
 #ifdef C_SDL2
     } else if ((SDL2_AudioDevice=SDL_OpenAudioDevice(NULL, 0, &spec, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_SAMPLES_CHANGE)) == 0) {
 #else
