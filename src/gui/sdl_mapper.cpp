@@ -1583,7 +1583,7 @@ public:
     CBind * CreateEventBind(SDL_Event * event) override {
         if (event->type!=SDL_KEYDOWN) return nullptr;
 #if defined(C_SDL2)
-        SDL_Scancode key = event->key.keysym.scancode;
+        SDL_Scancode key = event->key.scancode;
 #if defined(WIN32)
         if(key == SDL_SCANCODE_NONUSBACKSLASH) { // Special consideration for JP Keyboard
             key = (isJPkeyboard ? SDL_SCANCODE_INTERNATIONAL1 : SDL_SCANCODE_NONUSBACKSLASH);
@@ -1597,7 +1597,7 @@ public:
     bool CheckEvent(SDL_Event * event) override {
         if (event->type!=SDL_KEYDOWN && event->type!=SDL_KEYUP) return false;
 #if defined(C_SDL2)
-        Bitu key = event->key.keysym.scancode;
+        Bitu key = event->key.scancode;
 #if defined(WIN32)
         if(key == SDL_SCANCODE_NONUSBACKSLASH) { // Special consideration for JP Keyboard
             key = (isJPkeyboard ? SDL_SCANCODE_INTERNATIONAL1 : SDL_SCANCODE_NONUSBACKSLASH);
@@ -1606,15 +1606,15 @@ public:
 #else
 		Bitu key;
 
-		//key = (event->key.keysym.sym ? GetKeyCode(event->key.keysym) : sdlkey_map[(Bitu)(event->key.keysym.scancode)]);
+		//key = (event->key.key ? GetKeyCode(event->key.keysym) : sdlkey_map[(Bitu)(event->key.scancode)]);
 		key = GetKeyCode(event->key.keysym);
 		//assert(key < keys);
         if(key >= keys) {
             key = SDLK_UNKNOWN; // a test to avoid assertion failure (key < keys)
-            // LOG_MSG("assertion failed: key: %x [keysym.sym:%x keysym.scancode: %x]", key, event->key.keysym.sym, event->key.keysym.scancode);
+            // LOG_MSG("assertion failed: key: %x [keysym.sym:%x keysym.scancode: %x]", key, event->key.key, event->key.scancode);
         }
 #endif
-//      LOG_MSG("key type %i is %x [%x %x]",event->type,key,event->key.keysym.sym,event->key.keysym.scancode);
+//      LOG_MSG("key type %i is %x [%x %x]",event->type,key,event->key.key,event->key.scancode);
 
 #if defined(WIN32)
         /* HACK: When setting up the Japanese keyboard layout, I'm seeing some bizarre keyboard handling
@@ -1625,9 +1625,9 @@ public:
                  followed by a "down" event. This is confusing to the mapper, so we work around it here. */
 
 #if defined(C_SDL2)
-        if (isJPkeyboard && key == 0x35 && event->key.keysym.sym == 0x60)
+        if (isJPkeyboard && key == 0x35 && event->key.key == 0x60)
 #else
-        //if (isJPkeyboard && event->key.keysym.scancode == 0x29 /*Hankaku*/ || (useScanCode() && key == 0x29 && event->key.keysym.sym == 0))
+        //if (isJPkeyboard && event->key.scancode == 0x29 /*Hankaku*/ || (useScanCode() && key == 0x29 && event->key.key == 0))
         if (isJPkeyboard && (key == SDLK_BACKQUOTE || key == SDLK_WORLD_12))
 #endif
         {
@@ -4936,7 +4936,7 @@ void MAPPER_CheckEvent(SDL_Event * event) {
         if (event->type == SDL_KEYDOWN || event->type == SDL_KEYUP)
             LOG_MSG("MAPPER: SDL keyboard event (%s): scancode=0x%X sym=0x%X mod=0x%X",
                 event->type == SDL_KEYDOWN?"down":"up",
-                event->key.keysym.scancode,event->key.keysym.sym,event->key.keysym.mod);
+                event->key.scancode,event->key.key,event->key.mod);
     }
 }
 
@@ -5128,7 +5128,7 @@ void BIND_MappingEvents(void) {
                     s.mod,
                     s.unicode,
 					SDL_GetKeyName((SDLKey)GetKeyCode(s)));
-					//(s.sym ? SDL_GetKeyName((SDLKey)MapSDLCode((Bitu)s.sym)) : SDL_GetKeyName((SDLKey)MapSDLCode((Bitu)sdlkey_map[(s.scancode ? s.scancode : event.key.keysym.scancode)]))));
+					//(s.sym ? SDL_GetKeyName((SDLKey)MapSDLCode((Bitu)s.sym)) : SDL_GetKeyName((SDLKey)MapSDLCode((Bitu)sdlkey_map[(s.scancode ? s.scancode : event.key.scancode)]))));
 #endif
                 while (tmpl < (440/8)) tmp[tmpl++] = ' ';
                 assert(tmpl < sizeof(tmp));
@@ -5146,7 +5146,7 @@ void BIND_MappingEvents(void) {
 
                     nm[0] = 0;
 #if !defined(HX_DOS) /* I assume HX DOS doesn't bother with keyboard scancode names */
-					GetKeyNameText((s.scancode ? s.scancode : event.key.keysym.scancode) << 16, nm, sizeof(nm)-1);
+					GetKeyNameText((s.scancode ? s.scancode : event.key.scancode) << 16, nm, sizeof(nm)-1);
 #endif
 
                     tmpl = sprintf(tmp, "Win32: VK=0x%x kn=%s",(unsigned int)s.win32_vk,nm);

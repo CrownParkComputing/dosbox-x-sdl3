@@ -3125,13 +3125,13 @@ void MenuShadeRect(int x,int y,int w,int h) {
         if (w <= 0 || h <= 0)
             return;
 
-        if (sdl.surface->format->BitsPerPixel == 32) {
+        if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 32) {
             unsigned char *scan;
             uint32_t mask;
 
-            mask = ((sdl.surface->format->Rmask >> 2) & sdl.surface->format->Rmask) |
-                ((sdl.surface->format->Gmask >> 2) & sdl.surface->format->Gmask) |
-                ((sdl.surface->format->Bmask >> 2) & sdl.surface->format->Bmask);
+            mask = ((SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask >> 2) & SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask) |
+                ((SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask >> 2) & SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask) |
+                ((SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask >> 2) & SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask);
 
             assert(sdl.surface->pixels != NULL);
 
@@ -3144,13 +3144,13 @@ void MenuShadeRect(int x,int y,int w,int h) {
                 for (unsigned int c=0;c < (unsigned int)w;c++) row[c] = (row[c] >> 2) & mask;
             }
         }
-        else if (sdl.surface->format->BitsPerPixel == 16) {
+        else if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 16) {
             unsigned char *scan;
             uint16_t mask;
 
-            mask = ((sdl.surface->format->Rmask >> 2) & sdl.surface->format->Rmask) |
-                ((sdl.surface->format->Gmask >> 2) & sdl.surface->format->Gmask) |
-                ((sdl.surface->format->Bmask >> 2) & sdl.surface->format->Bmask);
+            mask = ((SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask >> 2) & SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask) |
+                ((SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask >> 2) & SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask) |
+                ((SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask >> 2) & SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask);
 
             assert(sdl.surface->pixels != NULL);
 
@@ -3214,7 +3214,7 @@ void MenuDrawRect(int x,int y,int w,int h,Bitu color) {
         if (w <= 0 || h <= 0)
             return;
 
-        if (sdl.surface->format->BitsPerPixel == 32) {
+        if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 32) {
             unsigned char *scan;
 
             assert(sdl.surface->pixels != NULL);
@@ -3228,7 +3228,7 @@ void MenuDrawRect(int x,int y,int w,int h,Bitu color) {
                 for (unsigned int c=0;c < (unsigned int)w;c++) row[c] = (uint32_t)color;
             }
         }
-        else if (sdl.surface->format->BitsPerPixel == 16) {
+        else if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 16) {
             unsigned char *scan;
 
             assert(sdl.surface->pixels != NULL);
@@ -3338,19 +3338,19 @@ void MenuDrawTextChar(int &x,int y,unsigned char c,Bitu color,bool check) {
 
             scan  = (unsigned char*)sdl.surface->pixels;
             scan += (unsigned int)y * (unsigned int)sdl.surface->pitch;
-            scan += (unsigned int)x * (((unsigned int)sdl.surface->format->BitsPerPixel+7u)/8u);
+            scan += (unsigned int)x * (((unsigned int)SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel+7u)/8u);
 
             for (unsigned int row=0;row < fontHeight;row++) {
                 unsigned char rb = bmp[prevc==1?(row*2+i):row];
 
-                if (sdl.surface->format->BitsPerPixel == 32) {
+                if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 32) {
                     uint32_t *dp = (uint32_t*)scan;
                     for (unsigned int colm=0x80;colm != 0;colm >>= 1) {
                         if (rb & colm) *dp = (uint32_t)color;
                         dp++;
                     }
                 }
-                else if (sdl.surface->format->BitsPerPixel == 16) {
+                else if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 16) {
                     uint16_t *dp = (uint16_t*)scan;
                     for (unsigned int colm=0x80;colm != 0;colm >>= 1) {
                         if (rb & colm) *dp = (uint16_t)color;
@@ -3456,12 +3456,12 @@ void MenuDrawTextChar2x(int &x,int y,unsigned char c,Bitu color,bool check) {
 
             scan  = (unsigned char*)sdl.surface->pixels;
             scan += y * sdl.surface->pitch;
-            scan += x * ((sdl.surface->format->BitsPerPixel+7)/8);
+            scan += x * ((SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel+7)/8);
 
             for (unsigned int row=0;row < (fontHeight*2);row++) {
                 unsigned char rb = bmp[prevc==1?((row>>1U)*2+i):(row>>1U)];
 
-                if (sdl.surface->format->BitsPerPixel == 32) {
+                if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 32) {
                     uint32_t *dp = (uint32_t*)scan;
                     for (unsigned int colm=0x80;colm != 0;colm >>= 1) {
                         if (rb & colm) {
@@ -3473,7 +3473,7 @@ void MenuDrawTextChar2x(int &x,int y,unsigned char c,Bitu color,bool check) {
                         }
                     }
                 }
-                else if (sdl.surface->format->BitsPerPixel == 16) {
+                else if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 16) {
                     uint16_t *dp = (uint16_t*)scan;
                     for (unsigned int colm=0x80;colm != 0;colm >>= 1) {
                         if (rb & colm) {

@@ -338,12 +338,12 @@ static void GenKBStroke(const UINT uiScanCode, const bool bDepressed, const SDLM
     SDL_Event evntKeyStroke = { 0 };
     evntKeyStroke.type = bDepressed ? SDL_KEYDOWN : SDL_KEYUP;
 #if defined(C_SDL2)
-    evntKeyStroke.key.keysym.scancode = SDL_GetScancodeFromKey(sdlkey);
+    evntKeyStroke.key.scancode = SDL_GetScancodeFromKey(sdlkey);
 #else
-    evntKeyStroke.key.keysym.scancode = uiScanCode & 0xFF;
+    evntKeyStroke.key.scancode = uiScanCode & 0xFF;
 #endif
-    evntKeyStroke.key.keysym.sym = sdlkey;
-    evntKeyStroke.key.keysym.mod = keymods;
+    evntKeyStroke.key.key = sdlkey;
+    evntKeyStroke.key.mod = keymods;
 #if !defined(C_SDL2)
     evntKeyStroke.key.keysym.unicode = 0;
 #endif

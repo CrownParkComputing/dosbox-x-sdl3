@@ -114,10 +114,10 @@ void OUTPUT_GAMELINK_InputEvent()
                 // Build event
                 SDL_Event ev;
                 ev.key.type = 0;
-                ev.key.keysym.scancode = scancode;
+                ev.key.scancode = scancode;
             
-                ev.key.keysym.mod = KMOD_NONE; // todo
-                ev.key.keysym.sym = SDLK_UNKNOWN; // todo
+                ev.key.mod = KMOD_NONE; // todo
+                ev.key.key = SDLK_UNKNOWN; // todo
 
                 const uint32_t mask = 1 << bit;
                 if ( ( key & mask ) && !( old & mask ) ) {

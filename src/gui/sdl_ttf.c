@@ -1337,7 +1337,7 @@ SDL_Surface *TTF_RenderUNICODE_Solid(TTF_Font *font,
 	dst_check = (Uint8*)textbuf->pixels + textbuf->pitch * textbuf->h;
 
 	/* Fill the palette with the foreground color */
-	palette = textbuf->format->palette;
+	palette = SDL_GetSurfacePalette(textbuf);
 	palette->colors[0].r = 255 - fg.r;
 	palette->colors[0].g = 255 - fg.g;
 	palette->colors[0].b = 255 - fg.b;
@@ -1471,7 +1471,7 @@ SDL_Surface *TTF_RenderGlyph_Solid(TTF_Font *font, Uint16 ch, SDL_Color fg)
 	}
 
 	/* Fill the palette with the foreground color */
-	palette = textbuf->format->palette;
+	palette = SDL_GetSurfacePalette(textbuf);
 	palette->colors[0].r = 255-fg.r;
 	palette->colors[0].g = 255-fg.g;
 	palette->colors[0].b = 255-fg.b;
@@ -1605,7 +1605,7 @@ SDL_Surface* TTF_RenderUNICODE_Shaded( TTF_Font* font,
 	dst_check = (Uint8*)textbuf->pixels + textbuf->pitch * textbuf->h;
 
 	/* Fill the palette with NUM_GRAYS levels of shading from bg to fg */
-	palette = textbuf->format->palette;
+	palette = SDL_GetSurfacePalette(textbuf);
 	rdiff = fg.r - bg.r;
 	gdiff = fg.g - bg.g;
 	bdiff = fg.b - bg.b;
@@ -1748,7 +1748,7 @@ SDL_Surface* TTF_RenderGlyph_Shaded( TTF_Font* font,
 	}
 
 	/* Fill the palette with NUM_GRAYS levels of shading from bg to fg */
-	palette = textbuf->format->palette;
+	palette = SDL_GetSurfacePalette(textbuf);
 	rdiff = fg.r - bg.r;
 	gdiff = fg.g - bg.g;
 	bdiff = fg.b - bg.b;

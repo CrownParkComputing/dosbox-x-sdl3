@@ -80,4 +80,63 @@
 #define SDL_FreeFormat(x) ((void)(x))
 #endif
 
+/* SDL2: SDL_ShowCursor(SDL_ENABLE|SDL_DISABLE) both set and queried.
+ * SDL3: split into SDL_ShowCursor(void) / SDL_HideCursor(void), and the
+ * SDL_ENABLE/SDL_DISABLE constants are gone.
+ *
+ * Every call site in this tree passes an argument (SDL2 style), so a
+ * function-like macro is safe here -- but note it would break a genuine
+ * zero-argument SDL3 call, so do not introduce one. */
+#ifndef SDL_ENABLE
+#define SDL_ENABLE  1
+#endif
+#ifndef SDL_DISABLE
+#define SDL_DISABLE 0
+#endif
+static inline bool retrodosbox_sdl3_show_cursor(int on) {
+    return on ? SDL_ShowCursor() : SDL_HideCursor();
+}
+#define SDL_ShowCursor(x) retrodosbox_sdl3_show_cursor(x)
+
+/* SDL2: one SDL_WINDOWEVENT type, with the specific event in
+ *       event.window.event.
+ * SDL3: each window event is its OWN top-level type (SDL_EVENT_WINDOW_*), and
+ *       event.window has no .event member.
+ *
+ * SDL_oldnames.h already maps every SDL_WINDOWEVENT_xxx constant to its
+ * SDL_EVENT_WINDOW_xxx equivalent, so the inner switches keep working once
+ * `.window.event` is rewritten to `.type` (done in the sources).
+ *
+ * That leaves the outer `case SDL_WINDOWEVENT:` wrapper, which must now match
+ * ANY window event. SDL3 guarantees they are a contiguous range, so this
+ * expands to a GCC/Clang case range and the wrapper needs no source edit:
+ *
+ *     case SDL_WINDOWEVENT:  ->  case SDL_EVENT_WINDOW_FIRST ... SDL_EVENT_WINDOW_LAST:
+ *
+ * Consequence: SDL_WINDOWEVENT is now USABLE ONLY AS A CASE LABEL. Any
+ * `event.type == SDL_WINDOWEVENT` comparison is a syntax error -- deliberately,
+ * because such a test needs rethinking rather than translating. The one site in
+ * sdlmain.cpp was rewritten to test the specific event instead. */
+#ifndef SDL_WINDOWEVENT
+#define SDL_WINDOWEVENT SDL_EVENT_WINDOW_FIRST ... SDL_EVENT_WINDOW_LAST
+#endif
+
+/* SDL2 had two fullscreen flags; SDL3 has one (fullscreen is always
+ * "desktop"-style, with the video mode chosen via SDL_SetWindowFullscreenMode). */
+#ifndef SDL_WINDOW_FULLSCREEN_DESKTOP
+#define SDL_WINDOW_FULLSCREEN_DESKTOP SDL_WINDOW_FULLSCREEN
+#endif
+
+/* SDL2 button/key state was Uint8 SDL_PRESSED/SDL_RELEASED; SDL3 uses a bool
+ * `down` field. These cover standalone uses of the constants -- but a
+ * comparison against event.button.state still needs a source edit, because the
+ * STRUCT MEMBER was renamed too. That is the point: the constant can be
+ * shimmed, the member cannot, and pretending otherwise would hide the change. */
+#ifndef SDL_PRESSED
+#define SDL_PRESSED  true
+#endif
+#ifndef SDL_RELEASED
+#define SDL_RELEASED false
+#endif
+
 #endif /* RETRODOSBOX_SDL3COMPAT_SDL_H */

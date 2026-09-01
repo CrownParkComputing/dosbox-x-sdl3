@@ -1477,7 +1477,7 @@ void GFX_SDL_Overscan(void) {
             if ((Bitu)rect->h > (Bitu)sdl.overscan_width) { rect->h = (uint16_t)sdl.overscan_width; }
             if ((Bitu)sdl.clip.x > (Bitu)sdl.overscan_width) { rect->x += (int)sdl.clip.x-(int)sdl.overscan_width; rect->w -= (unsigned int)(2*((int)sdl.clip.x-(int)sdl.overscan_width)); }
 
-            if (sdl.surface->format->BitsPerPixel == 8) { // SDL_FillRect seems to have some issues with palettized hw surfaces
+            if (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel == 8) { // SDL_FillRect seems to have some issues with palettized hw surfaces
                 uint8_t* pixelptr = (uint8_t*)sdl.surface->pixels;
                 Bitu linepitch = sdl.surface->pitch;
                 for (Bitu i=0; i<4; i++) {
@@ -1692,13 +1692,13 @@ void PauseDOSBoxLoop(Bitu /*unused*/) {
 
             case SDL_QUIT: KillSwitch(true); break;
             case SDL_KEYDOWN:   // Must use Pause/Break or escape Key to resume.
-            if(event.key.keysym.sym == SDLK_PAUSE || event.key.keysym.sym == SDLK_ESCAPE) {
+            if(event.key.key == SDLK_PAUSE || event.key.key == SDLK_ESCAPE) {
 
                 paused = false;
                 GFX_SetTitle(-1,-1,-1,false);
                 break;
             }
-            else if (event.key.keysym.sym == SDLK_SPACE) { /* spacebar = single frame step */
+            else if (event.key.key == SDLK_SPACE) { /* spacebar = single frame step */
                 /* resume, but let the VGA code know to call us on vertical retrace */
                 paused = false;
                 pause_on_vsync = true;
@@ -1706,7 +1706,7 @@ void PauseDOSBoxLoop(Bitu /*unused*/) {
                 break;
             }
 #if defined (MACOSX) && !defined(C_SDL2)
-            if (event.key.keysym.sym == SDLK_q && (event.key.keysym.mod == KMOD_RMETA || event.key.keysym.mod == KMOD_LMETA) ) {
+            if (event.key.key == SDLK_q && (event.key.mod == KMOD_RMETA || event.key.mod == KMOD_LMETA) ) {
                 /* On macs, all apps exit when pressing cmd-q */
                 KillSwitch(true);
                 break;
@@ -2113,7 +2113,7 @@ unsigned char GFX_Ashift;
 unsigned char GFX_bpp;
 
 unsigned int GFX_GetBShift() {
-    return sdl.surface->format->Bshift;
+    return SDL_GetPixelFormatDetails(sdl.surface->format)->Bshift;
 }
 
 void GFX_LogSDLState(void)
@@ -2126,29 +2126,29 @@ void GFX_LogSDLState(void)
         (unsigned)sdl.surface->w,(unsigned)sdl.surface->h,
         (unsigned)sdl.clip.w,(unsigned)sdl.clip.h,
         (unsigned)sdl.clip.x,(unsigned)sdl.clip.y,
-        (unsigned)sdl.surface->format->BitsPerPixel);
+        (unsigned)SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel);
     LOG(LOG_MISC,LOG_DEBUG)("   red: shift=%u mask=0x%08lx",
-        (unsigned)sdl.surface->format->Rshift,
-        (unsigned long)sdl.surface->format->Rmask);
+        (unsigned)SDL_GetPixelFormatDetails(sdl.surface->format)->Rshift,
+        (unsigned long)SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask);
     LOG(LOG_MISC,LOG_DEBUG)("   green: shift=%u mask=0x%08lx",
-        (unsigned)sdl.surface->format->Gshift,
-        (unsigned long)sdl.surface->format->Gmask);
+        (unsigned)SDL_GetPixelFormatDetails(sdl.surface->format)->Gshift,
+        (unsigned long)SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask);
     LOG(LOG_MISC,LOG_DEBUG)("   blue: shift=%u mask=0x%08lx",
-        (unsigned)sdl.surface->format->Bshift,
-        (unsigned long)sdl.surface->format->Bmask);
+        (unsigned)SDL_GetPixelFormatDetails(sdl.surface->format)->Bshift,
+        (unsigned long)SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask);
     LOG(LOG_MISC,LOG_DEBUG)("   alpha: shift=%u mask=0x%08lx",
-        (unsigned)sdl.surface->format->Ashift,
-        (unsigned long)sdl.surface->format->Amask);
+        (unsigned)SDL_GetPixelFormatDetails(sdl.surface->format)->Ashift,
+        (unsigned long)SDL_GetPixelFormatDetails(sdl.surface->format)->Amask);
 
-    GFX_bpp = sdl.surface->format->BitsPerPixel;
-    GFX_Rmask = sdl.surface->format->Rmask;
-    GFX_Rshift = sdl.surface->format->Rshift;
-    GFX_Gmask = sdl.surface->format->Gmask;
-    GFX_Gshift = sdl.surface->format->Gshift;
-    GFX_Bmask = sdl.surface->format->Bmask;
-    GFX_Bshift = sdl.surface->format->Bshift;
-    GFX_Amask = sdl.surface->format->Amask;
-    GFX_Ashift = sdl.surface->format->Ashift;
+    GFX_bpp = SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel;
+    GFX_Rmask = SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask;
+    GFX_Rshift = SDL_GetPixelFormatDetails(sdl.surface->format)->Rshift;
+    GFX_Gmask = SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask;
+    GFX_Gshift = SDL_GetPixelFormatDetails(sdl.surface->format)->Gshift;
+    GFX_Bmask = SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask;
+    GFX_Bshift = SDL_GetPixelFormatDetails(sdl.surface->format)->Bshift;
+    GFX_Amask = SDL_GetPixelFormatDetails(sdl.surface->format)->Amask;
+    GFX_Ashift = SDL_GetPixelFormatDetails(sdl.surface->format)->Ashift;
 }
 
 void GFX_TearDown(void) {
@@ -3231,7 +3231,7 @@ unsigned char *GFX_GetSurfacePtr(size_t *pitch, unsigned int x, unsigned int y) 
     if (sdl.surface->pixels != NULL) {
         unsigned char *p = (unsigned char*)(sdl.surface->pixels);
         p += y * sdl.surface->pitch;
-        p += x * ((unsigned int)sdl.surface->format->BitsPerPixel >> 3U);
+        p += x * ((unsigned int)SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel >> 3U);
         return p;
     }
 
@@ -4334,7 +4334,7 @@ static void GUI_StartUp() {
     }
     sdl.deferred_resize = false;
     sdl.must_redraw_all = true;
-    sdl.desktop.bpp=sdl.surface->format->BitsPerPixel;
+    sdl.desktop.bpp=SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel;
     if (sdl.desktop.bpp==24)
         LOG_MSG("SDL: You are running in 24 bpp mode, this will slow down things!");
 #endif
@@ -5175,14 +5175,14 @@ static void HandleMouseButton(SDL_MouseButtonEvent * button, SDL_MouseMotionEven
                             if (CheckQuit()) throw(0);
                             break;
                         case SDL_KEYUP:
-                            if (event.key.keysym.sym == SDLK_ESCAPE) {
+                            if (event.key.key == SDLK_ESCAPE) {
                                 choice_item = DOSBoxMenu::unassigned_item_handle;
                                 runloop = false;
                             }
                             break;
 #if defined(C_SDL2)
                         case SDL_WINDOWEVENT:
-                            switch (event.window.event) {
+                            switch (event.type) {
                                 case SDL_WINDOWEVENT_RESIZED:
                                     GFX_HandleVideoResize(event.window.data1, event.window.data2);
                                     runloop = false;
@@ -5962,7 +5962,7 @@ void GFX_Events() {
         /* SDL2 hack: There seems to be a problem where calling the SetWindowSize function,
            even for the same size, still causes a resize event, and sometimes for no apparent
            reason, will cause an endless feed of Windows Restored events. */
-        if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESTORED) {
+        if (event.type == SDL_WINDOWEVENT_RESTORED) {
             if (eatRestoredWindow) continue;
         }
         else {
@@ -6034,7 +6034,7 @@ void GFX_Events() {
             break;
 #endif
         case SDL_WINDOWEVENT:
-            switch (event.window.event) {
+            switch (event.type) {
             case SDL_WINDOWEVENT_MOVED:
 #if defined(USE_TTF)
                 if (ttf.inUse)
@@ -6104,7 +6104,7 @@ void GFX_Events() {
              * i.e. has the window been minimised or made inactive?
              */
             if (sdl.priority.nofocus == PRIORITY_LEVEL_PAUSE) {
-                if ((event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) || (event.window.event == SDL_WINDOWEVENT_MINIMIZED)) {
+                if ((event.type == SDL_WINDOWEVENT_FOCUS_LOST) || (event.type == SDL_WINDOWEVENT_MINIMIZED)) {
                     /* Window has lost focus, pause the emulator.
                      * This is similar to what PauseDOSBox() does, but the exit criteria is different.
                      * Instead of waiting for the user to hit Alt-Break, we wait for the window to
@@ -6134,9 +6134,9 @@ void GFX_Events() {
                             if (CheckQuit()) throw(0);
                             break; // a bit redundant at linux at least as the active events gets before the quit event.
                         case SDL_WINDOWEVENT:     // wait until we get window focus back
-                            if ((ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) || (ev.window.event == SDL_WINDOWEVENT_MINIMIZED) || (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) || (ev.window.event == SDL_WINDOWEVENT_RESTORED) || (ev.window.event == SDL_WINDOWEVENT_EXPOSED)) {
+                            if ((ev.type == SDL_WINDOWEVENT_FOCUS_LOST) || (ev.type == SDL_WINDOWEVENT_MINIMIZED) || (ev.type == SDL_WINDOWEVENT_FOCUS_GAINED) || (ev.type == SDL_WINDOWEVENT_RESTORED) || (ev.type == SDL_WINDOWEVENT_EXPOSED)) {
                                 // We've got focus back, so unpause and break out of the loop
-                                if ((ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) || (ev.window.event == SDL_WINDOWEVENT_RESTORED) || (ev.window.event == SDL_WINDOWEVENT_EXPOSED)) {
+                                if ((ev.type == SDL_WINDOWEVENT_FOCUS_GAINED) || (ev.type == SDL_WINDOWEVENT_RESTORED) || (ev.type == SDL_WINDOWEVENT_EXPOSED)) {
                                     paused = false;
                                     GFX_SetTitle(-1,-1,-1,false);
                                 }
@@ -6147,7 +6147,7 @@ void GFX_Events() {
                                  */
                                 KEYBOARD_AddKey(KBD_leftalt, false);
                                 KEYBOARD_AddKey(KBD_rightalt, false);
-                                if (ev.window.event == SDL_WINDOWEVENT_RESTORED) {
+                                if (ev.type == SDL_WINDOWEVENT_RESTORED) {
                                     // We may need to re-create a texture and more
                                     GFX_ResetScreen();
                                 }
@@ -6300,25 +6300,25 @@ void GFX_Events() {
         case SDL_KEYUP:
             if (sdl.desktop.type == SCREEN_GAMELINK) break;
 #if defined (WIN32) || defined(MACOSX) || defined(C_SDL2)
-            if (event.key.keysym.sym==SDLK_LALT) sdl.laltstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_RALT) sdl.raltstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_LCTRL) sdl.lctrlstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_RCTRL) sdl.rctrlstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_LSHIFT) sdl.lshiftstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_RSHIFT) sdl.rshiftstate = event.key.type;
+            if (event.key.key==SDLK_LALT) sdl.laltstate = event.key.type;
+            if (event.key.key==SDLK_RALT) sdl.raltstate = event.key.type;
+            if (event.key.key==SDLK_LCTRL) sdl.lctrlstate = event.key.type;
+            if (event.key.key==SDLK_RCTRL) sdl.rctrlstate = event.key.type;
+            if (event.key.key==SDLK_LSHIFT) sdl.lshiftstate = event.key.type;
+            if (event.key.key==SDLK_RSHIFT) sdl.rshiftstate = event.key.type;
             if (event.type == SDL_KEYDOWN && isModifierApplied())
-                ClipKeySelect(event.key.keysym.sym);
+                ClipKeySelect(event.key.key);
             if(dos.im_enable_flag) {
 #if defined(MACOSX)
                 if(event.type == SDL_KEYDOWN && IME_GetEnable()) {
                     // Enter, BS, TAB, <-, ->
-                    if(event.key.keysym.sym == 0x0d || event.key.keysym.sym == 0x08 || event.key.keysym.sym == 0x09 || (event.key.keysym.scancode >= 0x4f && event.key.keysym.scancode <= 0x52)) {
+                    if(event.key.key == 0x0d || event.key.key == 0x08 || event.key.key == 0x09 || (event.key.scancode >= 0x4f && event.key.scancode <= 0x52)) {
                         if(ime_text.size() != 0) {
                             break;
                         }
                     } else {
-                        if(event.key.keysym.scancode == 0x2c && ime_text.size() == 0 && dos.loaded_codepage == 932) {
-                            if((event.key.keysym.mod & 0x03) == 0) {
+                        if(event.key.scancode == 0x2c && ime_text.size() == 0 && dos.loaded_codepage == 932) {
+                            if((event.key.mod & 0x03) == 0) {
                                 // Zenkaku space
                                 BIOS_AddKeyToBuffer(0xf100 | 0x81);
                                 BIOS_AddKeyToBuffer(0xf000 | 0x40);
@@ -6330,7 +6330,7 @@ void GFX_Events() {
                 }
 #endif
                 // Hankaku/Zenkaku
-                if(event.key.keysym.scancode == 0x35) {
+                if(event.key.scancode == 0x35) {
                     MAPPER_CheckKeyboardLayout();
                     if (isJPkeyboard) break;
                 }
@@ -6338,9 +6338,9 @@ void GFX_Events() {
 #endif
 #if defined (MACOSX)
             /* On macs CMD-Q is the default key to close an application */
-            if (event.key.keysym.sym == SDLK_q &&
-                    (event.key.keysym.mod == KMOD_RGUI ||
-                     event.key.keysym.mod == KMOD_LGUI)
+            if (event.key.key == SDLK_q &&
+                    (event.key.mod == KMOD_RGUI ||
+                     event.key.mod == KMOD_LGUI)
                ) {
                 KillSwitch(true);
                 break;
@@ -6619,12 +6619,12 @@ void GFX_Events() {
         case SDL_KEYDOWN:
         case SDL_KEYUP:
             // ignore event alt+tab
-            if (event.key.keysym.sym==SDLK_LALT) sdl.laltstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_RALT) sdl.raltstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_LCTRL) sdl.lctrlstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_RCTRL) sdl.rctrlstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_LSHIFT) sdl.lshiftstate = event.key.type;
-            if (event.key.keysym.sym==SDLK_RSHIFT) sdl.rshiftstate = event.key.type;
+            if (event.key.key==SDLK_LALT) sdl.laltstate = event.key.type;
+            if (event.key.key==SDLK_RALT) sdl.raltstate = event.key.type;
+            if (event.key.key==SDLK_LCTRL) sdl.lctrlstate = event.key.type;
+            if (event.key.key==SDLK_RCTRL) sdl.rctrlstate = event.key.type;
+            if (event.key.key==SDLK_LSHIFT) sdl.lshiftstate = event.key.type;
+            if (event.key.key==SDLK_RSHIFT) sdl.rshiftstate = event.key.type;
 #if defined(LINUX) && C_X11
 			if (event.type == SDL_KEYDOWN) {
 				if((IS_PC98_ARCH || isDBCSCP()) && event.key.keysym.unicode != 0) {
@@ -6649,25 +6649,25 @@ void GFX_Events() {
 #endif
 #if defined(WIN32)
             if (event.type == SDL_KEYDOWN && isModifierApplied())
-                ClipKeySelect(event.key.keysym.sym);
-            if ((event.key.keysym.sym==SDLK_TAB) &&
+                ClipKeySelect(event.key.key);
+            if ((event.key.key==SDLK_TAB) &&
                 ((sdl.laltstate==SDL_KEYDOWN) || (sdl.raltstate==SDL_KEYDOWN))) { MAPPER_LosingFocus(); break; }
             // This can happen as well.
-            if ((event.key.keysym.sym == SDLK_TAB) && (event.key.keysym.mod & KMOD_ALT)) break;
+            if ((event.key.key == SDLK_TAB) && (event.key.mod & KMOD_ALT)) break;
             // ignore tab events that arrive just after regaining focus. (likely the result of alt-tab)
-            if ((event.key.keysym.sym == SDLK_TAB) && (GetTicks() - sdl.focus_ticks < 2)) break;
+            if ((event.key.key == SDLK_TAB) && (GetTicks() - sdl.focus_ticks < 2)) break;
             if (GetACP() == 932 && GetKeyboardType(0) != 7) {
                 // If the Windows code page is 932 and you are using a non-Japanese keyboard
-                if(event.key.keysym.scancode == 0x0d) event.key.keysym.sym = SDLK_EQUALS;
-                else if(event.key.keysym.scancode == 0x2b) event.key.keysym.sym = SDLK_BACKSLASH;
-                else if(event.key.keysym.scancode == 0x27) event.key.keysym.sym = SDLK_SEMICOLON;
-                else if(event.key.keysym.scancode == 0x28) event.key.keysym.sym = SDLK_QUOTE;
+                if(event.key.scancode == 0x0d) event.key.key = SDLK_EQUALS;
+                else if(event.key.scancode == 0x2b) event.key.key = SDLK_BACKSLASH;
+                else if(event.key.scancode == 0x27) event.key.key = SDLK_SEMICOLON;
+                else if(event.key.scancode == 0x28) event.key.key = SDLK_QUOTE;
             }
 #if !defined(HX_DOS) && defined(SDL_DOSBOX_X_SPECIAL)
 			int onoff;
 			if(SDL_GetIMValues(SDL_IM_ONOFF, &onoff, NULL) == NULL) {
 				if(onoff != 0 && event.type == SDL_KEYDOWN) {
-					if(event.key.keysym.sym == 0x0d) {
+					if(event.key.key == 0x0d) {
 						if(sdl.ime_ticks != 0) {
 							if(GetTicks() - sdl.ime_ticks < 10) {
 								sdl.ime_ticks = 0;
@@ -6678,7 +6678,7 @@ void GFX_Events() {
 				}
 			}
 			sdl.ime_ticks = 0;
-			if(event.key.keysym.scancode == 0 && event.key.keysym.sym == 0) {
+			if(event.key.scancode == 0 && event.key.key == 0) {
 				int len;
 				char chars[10];
 				if((len = SDL_FlushIMString(NULL))) {
@@ -6714,7 +6714,7 @@ void GFX_Events() {
 			int onoff;
 			if(SDL_GetIMValues(SDL_IM_ONOFF, &onoff, NULL) == NULL) {
 				if(onoff != 0 && event.type == SDL_KEYDOWN) {
-					if(event.key.keysym.sym == 0x0d) {
+					if(event.key.key == 0x0d) {
 						if(sdl.ime_ticks != 0) {
 							if(GetTicks() - sdl.ime_ticks < 10) {
 								sdl.ime_ticks = 0;
@@ -6726,7 +6726,7 @@ void GFX_Events() {
 			}
 			ime_key = false;
 			sdl.ime_ticks = 0;
-			if(event.key.keysym.scancode == 0 && event.key.keysym.sym == 0) {
+			if(event.key.scancode == 0 && event.key.key == 0) {
 				int len;
 				if(len = SDL_FlushIMString(NULL)) {
 					int flag = 0;
@@ -6740,24 +6740,24 @@ void GFX_Events() {
 								BIOS_AddKeyToBuffer(0xf000 | buff[no]);
 							} else {
 								if(buff[no] == 0x1c) {
-									event.key.keysym.scancode = 0x7b;
-									event.key.keysym.sym = SDLK_LEFT;
+									event.key.scancode = 0x7b;
+									event.key.key = SDLK_LEFT;
 									ime_key = true;
 								} else if(buff[no] == 0x1d) {
-									event.key.keysym.scancode = 0x7c;
-									event.key.keysym.sym = SDLK_RIGHT;
+									event.key.scancode = 0x7c;
+									event.key.key = SDLK_RIGHT;
 									ime_key = true;
 								} else if(buff[no] == 0x1e) {
-									event.key.keysym.scancode = 0x7e;
-									event.key.keysym.sym = SDLK_UP;
+									event.key.scancode = 0x7e;
+									event.key.key = SDLK_UP;
 									ime_key = true;
 								} else if(buff[no] == 0x1f) {
-									event.key.keysym.scancode = 0x7d;
-									event.key.keysym.sym = SDLK_DOWN;
+									event.key.scancode = 0x7d;
+									event.key.key = SDLK_DOWN;
 									ime_key = true;
 								} else if(buff[no] == 0x08) {
-									event.key.keysym.scancode = 0x33;
-									event.key.keysym.sym = SDLK_BACKSPACE;
+									event.key.scancode = 0x33;
+									event.key.key = SDLK_BACKSPACE;
 									ime_key = true;
 								} else {
 									BIOS_AddKeyToBuffer(buff[no]);
@@ -6773,9 +6773,9 @@ void GFX_Events() {
 				}
 			}
             if (event.type == SDL_KEYDOWN && isModifierApplied())
-                ClipKeySelect(event.key.keysym.sym);
+                ClipKeySelect(event.key.key);
             /* On macs CMD-Q is the default key to close an application */
-            if (event.key.keysym.sym == SDLK_q && (event.key.keysym.mod == KMOD_RMETA || event.key.keysym.mod == KMOD_LMETA) ) {
+            if (event.key.key == SDLK_q && (event.key.mod == KMOD_RMETA || event.key.mod == KMOD_LMETA) ) {
                 KillSwitch(true);
                 break;
             }
@@ -6783,12 +6783,12 @@ void GFX_Events() {
         default:
 #if defined(WIN32) && !defined(HX_DOS) && defined(SDL_DOSBOX_X_SPECIAL)
             if(dos.im_enable_flag) {
-                if(event.key.keysym.scancode == 0x94) {
+                if(event.key.scancode == 0x94) {
                     break;
-                } else if(event.key.keysym.scancode == 0x29) {
+                } else if(event.key.scancode == 0x29) {
                     MAPPER_CheckKeyboardLayout();
                     if (isJPkeyboard) break;
-                } else if(event.key.keysym.scancode == 0x70) {
+                } else if(event.key.scancode == 0x70) {
                     event.type = SDL_KEYDOWN;
                 }
             }

@@ -151,7 +151,7 @@ CPrinter::CPrinter(uint16_t dpi, uint16_t width, uint16_t height, char* output, 
 		page = SDL_CreateRGBSurface(SDL_SWSURFACE, (int)(defaultPageWidth*dpi), (int)(defaultPageHeight*dpi), 8, 0, 0, 0, 0);
 
 		// Set a grey palette
-		SDL_Palette* palette = page->format->palette;
+		SDL_Palette* palette = SDL_GetSurfacePalette(page);
 		
 		for (Bitu i = 0; i < 32; i++)
 		{
@@ -2148,11 +2148,11 @@ void CPrinter::outputPage()
 
                 uint8_t r, g, b;
 
-                if(page->format->BytesPerPixel == 1) {
+                if(SDL_GetPixelFormatDetails(page->format)->bytes_per_pixel == 1) {
                     uint8_t idx = src[x];
 
-                    if(page->format->palette) {
-                        SDL_Color c = page->format->palette->colors[idx];
+                    if(SDL_GetSurfacePalette(page)) {
+                        SDL_Color c = SDL_GetSurfacePalette(page)->colors[idx];
                         r = c.r; g = c.g; b = c.b;
                     }
                     else {
@@ -2161,8 +2161,8 @@ void CPrinter::outputPage()
                 }
                 else {
                     uint32_t pixel;
-                    memcpy(&pixel, src + x * page->format->BytesPerPixel,
-                        page->format->BytesPerPixel);
+                    memcpy(&pixel, src + x * SDL_GetPixelFormatDetails(page->format)->bytes_per_pixel,
+                        SDL_GetPixelFormatDetails(page->format)->bytes_per_pixel);
                     SDL_GetRGB(pixel, page->format, &r, &g, &b);
                 }
 
@@ -2272,12 +2272,12 @@ void CPrinter::outputPage()
 
                 uint8_t r = 0, g = 0, b = 0;
 
-                switch(page->format->BytesPerPixel) {
+                switch(SDL_GetPixelFormatDetails(page->format)->bytes_per_pixel) {
 
                 case 1: {
                     uint8_t idx = src[x];
-                    if(page->format->palette) {
-                        SDL_Color c = page->format->palette->colors[idx];
+                    if(SDL_GetSurfacePalette(page)) {
+                        SDL_Color c = SDL_GetSurfacePalette(page)->colors[idx];
                         r = c.r; g = c.g; b = c.b;
                     }
                     else {

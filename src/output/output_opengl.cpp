@@ -630,7 +630,7 @@ Bitu OUTPUT_OPENGL_SetSize()
 #else
     if (SetupSurfaceScaledOpenGL(SDL_RESIZABLE,32)==NULL) SetupSurfaceScaledOpenGL(SDL_RESIZABLE,16);
 #endif
-    if (!sdl.surface || sdl.surface->format->BitsPerPixel < 15)
+    if (!sdl.surface || SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel < 15)
     {
         LOG_MSG("SDL:OPENGL:Can't open drawing surface, are you running in 16bpp(or higher) mode?");
         return 0;

@@ -2186,7 +2186,7 @@ public:
             
             dr = dr0 + dest->pitch;
             for( v = 0; v < scale - 1; v += 1 )
-            {   memcpy( dr, dr0, scale * surface->w * dest->format->BytesPerPixel );
+            {   memcpy( dr, dr0, scale * surface->w * SDL_GetPixelFormatDetails(dest->format)->bytes_per_pixel );
                 dr = dr + dest->pitch;
             }
             dr0 = dr;
@@ -2273,7 +2273,7 @@ bool ScreenSDL::event(SDL_Event &event) {
 	}
 	case SDL_KEYDOWN: {
 		const Key &key = SDL_to_GUI(event.key.keysym);
-        //LOG_MSG("scancode=%x, sim=%x", event.key.keysym.scancode, event.key.keysym.sym);
+        //LOG_MSG("scancode=%x, sim=%x", event.key.scancode, event.key.key);
 		if (key.special == GUI::Key::None && key.character == 0) break;
 		rc = keyDown(key);
 		if (key.special == GUI::Key::CapsLock || key.special == GUI::Key::NumLock) keyUp(key);

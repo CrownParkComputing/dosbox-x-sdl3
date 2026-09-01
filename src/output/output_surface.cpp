@@ -193,7 +193,7 @@ Bitu OUTPUT_SURFACE_SetSize()
     sdl.surface = SDL_GetWindowSurface(sdl.window);
     if (sdl.surface == NULL)
         E_Exit("Could not retrieve window surface: %s", SDL_GetError());
-    switch (sdl.surface->format->BitsPerPixel) {
+    switch (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel) {
     case 8:
         retFlags = GFX_CAN_8;
         break;
@@ -271,7 +271,7 @@ Bitu OUTPUT_SURFACE_GetBestMode(Bitu flags)
     * which causes colors to mis-display. This seems to be common with Windows and Linux.
     * If SDL said 16-bit but the bit masks suggest 15-bit, then make the correction now. */
     if (gotbpp == 16) {
-        if (sdl.surface->format->Gshift == 5 && sdl.surface->format->Gmask == (31U << 5U)) {
+        if (SDL_GetPixelFormatDetails(sdl.surface->format)->Gshift == 5 && SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask == (31U << 5U)) {
             LOG_MSG("NOTE: SDL returned 16-bit/pixel mode (5:6:5) but failed to recognize your screen is 15-bit/pixel mode (5:5:5)");
             gotbpp = 15;
         }
@@ -320,7 +320,7 @@ retry:
     But on Windows, we're still required to ask for 16bpp to get the 15bpp mode we want. */
     if (bpp == 15)
     {
-        if (sdl.surface->format->Gshift == 5 && sdl.surface->format->Gmask == (31U << 5U))
+        if (SDL_GetPixelFormatDetails(sdl.surface->format)->Gshift == 5 && SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask == (31U << 5U))
         {
             LOG_MSG("SDL hack: Asking for 16-bit color (5:6:5) to get SDL to give us 15-bit color (5:5:5) to match your screen.");
             bpp = 16;
@@ -529,7 +529,7 @@ retry:
 
     if (sdl.surface)
     {
-        switch (sdl.surface->format->BitsPerPixel)
+        switch (SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel)
         {
             case 8:
                 retFlags = GFX_CAN_8;
@@ -538,7 +538,7 @@ retry:
                 retFlags = GFX_CAN_15;
                 break;
             case 16:
-                if (sdl.surface->format->Gshift == 5 && sdl.surface->format->Gmask == (31U << 5U))
+                if (SDL_GetPixelFormatDetails(sdl.surface->format)->Gshift == 5 && SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask == (31U << 5U))
                     retFlags = GFX_CAN_15;
                 else
                     retFlags = GFX_CAN_16;
@@ -555,10 +555,10 @@ retry:
         {
             sdl.blit.surface = SDL_CreateRGBSurface((Uint32)SDL_HWSURFACE,
                 (int)sdl.draw.width, (int)sdl.draw.height,
-                (int)sdl.surface->format->BitsPerPixel,
-                (Uint32)sdl.surface->format->Rmask,
-                (Uint32)sdl.surface->format->Gmask,
-                (Uint32)sdl.surface->format->Bmask,
+                (int)SDL_GetPixelFormatDetails(sdl.surface->format)->bits_per_pixel,
+                (Uint32)SDL_GetPixelFormatDetails(sdl.surface->format)->Rmask,
+                (Uint32)SDL_GetPixelFormatDetails(sdl.surface->format)->Gmask,
+                (Uint32)SDL_GetPixelFormatDetails(sdl.surface->format)->Bmask,
                 (Uint32)0u);
             /* If this one fails be ready for some flickering... */
         }
@@ -630,7 +630,7 @@ bool OUTPUT_SURFACE_StartUpdate(uint8_t* &pixels, Bitu &pitch)
                     return false;
                 pixels = (uint8_t *)sdl.surface->pixels;
                 pixels += sdl.clip.y * sdl.surface->pitch;
-                pixels += sdl.clip.x * sdl.surface->format->BytesPerPixel;
+                pixels += sdl.clip.x * SDL_GetPixelFormatDetails(sdl.surface->format)->bytes_per_pixel;
                 pitch = sdl.surface->pitch;
             }
         }
