@@ -612,7 +612,13 @@ AC_CHECK_LIB(rt, main, have_rt_lib=yes, have_rt_lib=no , )
 AC_ARG_ENABLE(gamelink,AC_HELP_STRING([--disable-gamelink],[Disable headless game link output mode (only for SDL2)]),,enable_gamelink=yes)
 AC_MSG_CHECKING(whether gamelink is enabled) 
 if test x$enable_gamelink = xyes; then
-  if test "x$SDL_STRING" = "xSDL2"; then
+  dnl "only for SDL2" means "not SDL1": the Game Link output needs the SDL2-era
+  dnl surface handling, which SDL3 also provides (and dosbox.h defines C_SDL2
+  dnl for SDL3 builds precisely so that code compiles). Gating on the literal
+  dnl string SDL2 silently disabled headless output for every SDL3 build --
+  dnl output=gamelink was then an unknown value, fell back to output=surface,
+  dnl and an embedded host got a second window instead of an offscreen buffer.
+  if test "x$SDL_STRING" = "xSDL2" -o "x$SDL_STRING" = "xSDL3"; then
     AC_MSG_RESULT(yes)
     C_GAMELINK=1
     AC_DEFINE(C_GAMELINK,1)

@@ -158,6 +158,28 @@ for a in $(cd src && ls */lib*.a */*/lib*.a 2>/dev/null); do :; done
 #   dlopen failed: cannot locate symbol "inflateInit2_"
 # and the app dies instantly with no crash and no stack. Failing the LINK
 # instead turns a device-only mystery into a build error naming the symbol.
+# ---------------------------------------------------------------------------
+# 2b. The SDL3 + ImGui frontend
+# ---------------------------------------------------------------------------
+# The frontend owns the window; the engine runs headless behind it through the
+# Game Link output. It provides main(), which <SDL3/SDL_main.h> renames to
+# SDL_main -- that is the symbol SDLActivity looks up, and it does not clash
+# with the engine's own main().
+echo "==> building the SDL3 + ImGui frontend"
+FE_OUT="$OUT/frontend"
+mkdir -p "$FE_OUT"
+FE_OBJS=""
+FE_FLAGS="-fPIC -O2 -g0 -DANDROID -std=gnu++17
+          -I$ROOT/include -I$ROOT/frontend/imgui
+          -I$SDL3_PREFIX/include"
+for src in "$ROOT"/frontend/retrodos_frontend.cpp "$ROOT"/frontend/imgui/*.cpp; do
+    obj="$FE_OUT/$(basename "${src%.cpp}").o"
+    # shellcheck disable=SC2086
+    "$CXX" $FE_FLAGS -c -o "$obj" "$src" || {
+        echo "error: frontend compile failed on $src" >&2; exit 1; }
+    FE_OBJS="$FE_OBJS $obj"
+done
+
 echo "==> linking libretrodos.so"
 LDADD_RAW="$(make -C src -s --eval='__print_ldadd:; @echo $(dosbox_x_LDADD)' __print_ldadd)"
 [ -n "$LDADD_RAW" ] || { echo "error: could not read dosbox_x_LDADD" >&2; exit 1; }
@@ -174,6 +196,7 @@ done
 
 # shellcheck disable=SC2086
 "$CXX" -shared -fPIC -o "$OUT/libretrodos.so" \
+    $FE_OBJS \
     -Wl,--whole-archive $ARCHIVES "$TREE"/src/*.o -Wl,--no-whole-archive \
     -L"$SDL3_PREFIX/lib" -lSDL3 \
     $LIBS_LINE $EXTRA \

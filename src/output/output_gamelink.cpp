@@ -113,7 +113,7 @@ void OUTPUT_GAMELINK_InputEvent()
             
                 // Build event
                 SDL_Event ev;
-                ev.key.type = 0;
+                ev.key.type = (SDL_EventType)0; /* SDL3 types this field */
                 ev.key.scancode = scancode;
             
                 ev.key.mod = KMOD_NONE; // todo

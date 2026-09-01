@@ -147,6 +147,12 @@ char* revert_escape_newlines(const char* aMessage);
 /* Implemented by the DosboxMultiplatform bridge when it is linked in. Weak so
  * a plain dosbox-x build resolves it to null and skips the call below. */
 extern "C" void retrodos_host_pump(void) __attribute__((weak));
+extern "C" bool retrodos_host_embedded(void) __attribute__((weak));
+/* Weak: a plain dosbox-x build resolves this to null and keeps SDL_Quit. */
+static inline bool retrodos_host_embedded_or_false(void) {
+    return retrodos_host_embedded ? retrodos_host_embedded() : false;
+}
+#define retrodos_host_embedded() retrodos_host_embedded_or_false()
 
 #include "zipfile.h"
 #include "glidedef.h"
@@ -4315,7 +4321,14 @@ static void GUI_StartUp() {
 
 /* Initialize screen for first time */
 #if defined(C_SDL2)
-    if (!initgl) {
+    /* Game Link renders OFFSCREEN into a plain buffer, so there is nothing for
+     * a window to show. Creating one anyway is not merely wasteful: when the
+     * engine is embedded the host already owns the only window the platform
+     * allows, and this call fails with
+     *   E_Exit: Could not initialize video: Invalid window
+     * which reads like a video-driver problem and is really "we asked for a
+     * second window on a platform that has exactly one". */
+    if (!initgl && sdl.desktop.want_type != SCREEN_GAMELINK) {
         GFX_SetResizeable(true);
         if (!GFX_SetSDLSurfaceWindow(640,400))
             E_Exit("Could not initialize video: %s",SDL_GetError());
@@ -10662,7 +10675,17 @@ fresh_boot:
 #if defined(C_SDL2)
         SDL_CDROMQuit();
 #endif
-        SDL_Quit();//Let's hope sdl will quit as well when it catches an exception
+        /* When the engine is EMBEDDED, SDL belongs to the host: the
+         * frontend created the window, renderer and ImGui context before the
+         * engine ever started, and keeps using them after a session ends.
+         * SDL_Quit() here tears all of that down underneath the host thread,
+         * which then trips
+         *   FORTIFY: pthread_mutex_lock called on a destroyed mutex
+         * on whichever thread touches SDL next -- a crash with no connection
+         * on its face to the emulator having exited. Let the host own the
+         * lifetime it created. */
+        if (!retrodos_host_embedded())
+            SDL_Quit();//Let's hope sdl will quit as well when it catches an exception
 
 #if defined(WIN32) && !defined(HX_DOS) && !defined(_WIN32_WINDOWS)
         if (winTaskbarList != NULL) {

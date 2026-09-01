@@ -40,6 +40,79 @@
 #include "SDL_syswm.h"
 #include "SDL.h"
 
+#if defined(__ANDROID__) && !defined(WIN32)
+/* Bionic has no POSIX shared memory: shm_open/shm_unlink do not exist at all.
+ * The Game Link mapping only matters to an EXTERNAL client (Grid Cartographer
+ * and friends); an embedded host reads frames through the in-process publish
+ * hook instead. Backing it with an ordinary file keeps every ftruncate/mmap/
+ * munmap path below working unchanged, and simply has no cross-process
+ * reader -- which on Android is what we want anyway. */
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+static const char *retrodos_shm_dir(void)
+{
+	const char *tmp = getenv("TMPDIR");
+	return (tmp && *tmp) ? tmp : "/data/local/tmp";
+}
+static int retrodos_shm_open(const char *name, int flags, mode_t mode)
+{
+	char path[512];
+	snprintf(path, sizeof(path), "%s/%s", retrodos_shm_dir(),
+	         (*name == '/') ? name + 1 : name);
+	return open(path, flags, mode);
+}
+static int retrodos_shm_unlink(const char *name)
+{
+	char path[512];
+	snprintf(path, sizeof(path), "%s/%s", retrodos_shm_dir(),
+	         (*name == '/') ? name + 1 : name);
+	return unlink(path);
+}
+#define shm_open(n,f,m) retrodos_shm_open((n),(f),(m))
+#define shm_unlink(n)   retrodos_shm_unlink(n)
+
+/* Bionic also has no NAMED POSIX semaphores: sem_open/sem_close/sem_unlink
+ * are declared but return ENOSYS (errno 38). The Game Link mutex exists only
+ * to interlock with an external client reading the mapping; with no such
+ * client there is nothing to interlock against, and failing to create it made
+ * GameLink::Init() report "Couldn't initialise inter-process communication"
+ * and give up -- taking the offscreen renderer down with it.
+ *
+ * Back it with an UNNAMED semaphore instead. sem_wait/sem_post below then work
+ * normally (they guard this process's own access), and only the cross-process
+ * meaning is lost, which is exactly the part Android cannot have. */
+static sem_t retrodos_local_sem;
+static int   retrodos_local_sem_ready = 0;
+static sem_t *retrodos_sem_open(const char *name, int flags, mode_t mode, unsigned value)
+{
+	(void)name; (void)mode;
+	/* Honour O_CREAT. The caller first probes WITHOUT it to ask "is there a
+	 * stale mutex from a crashed session?", and answering yes sends it down a
+	 * cleanup path that has nothing to clean. An unnamed semaphore never
+	 * outlives its process, so the honest answer is always no. */
+	if (!(flags & O_CREAT)) return SEM_FAILED;
+	if (!retrodos_local_sem_ready) {
+		if (sem_init(&retrodos_local_sem, 0, value) != 0) return SEM_FAILED;
+		retrodos_local_sem_ready = 1;
+	}
+	return &retrodos_local_sem;
+}
+static int retrodos_sem_close(sem_t *s)
+{
+	if (s == &retrodos_local_sem && retrodos_local_sem_ready) {
+		sem_destroy(&retrodos_local_sem);
+		retrodos_local_sem_ready = 0;
+	}
+	return 0;
+}
+static int retrodos_sem_unlink(const char *name) { (void)name; return 0; }
+#define sem_open(n,f,m,v) retrodos_sem_open((n),(f),(m),(v))
+#define sem_close(s)      retrodos_sem_close(s)
+#define sem_unlink(n)     retrodos_sem_unlink(n)
+#endif
+
 extern bool is_paused;
 extern uint32_t RunningProgramLoadAddress;
 
