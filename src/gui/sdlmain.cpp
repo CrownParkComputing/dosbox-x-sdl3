@@ -148,6 +148,7 @@ char* revert_escape_newlines(const char* aMessage);
  * a plain dosbox-x build resolves it to null and skips the call below. */
 extern "C" void retrodos_host_pump(void) __attribute__((weak));
 extern "C" bool retrodos_host_embedded(void) __attribute__((weak));
+extern "C" void *retrodos_host_window(void) __attribute__((weak));
 /* Weak: a plain dosbox-x build resolves this to null and keeps SDL_Quit. */
 static inline bool retrodos_host_embedded_or_false(void) {
     return retrodos_host_embedded ? retrodos_host_embedded() : false;
@@ -4321,14 +4322,30 @@ static void GUI_StartUp() {
 
 /* Initialize screen for first time */
 #if defined(C_SDL2)
-    /* Game Link renders OFFSCREEN into a plain buffer, so there is nothing for
-     * a window to show. Creating one anyway is not merely wasteful: when the
-     * engine is embedded the host already owns the only window the platform
-     * allows, and this call fails with
+    /* An EMBEDDED Game Link session adopts the host's window instead of asking
+     * for its own.
+     *
+     * Game Link renders offscreen, but the engine was never written to run
+     * with NO window: plenty of later code assumes sdl.window and sdl.surface
+     * are valid, so merely skipping creation just moves the failure to the
+     * first dereference. Meanwhile a platform like Android allows exactly one
+     * window, and the host already has it -- asking for a second fails with
      *   E_Exit: Could not initialize video: Invalid window
-     * which reads like a video-driver problem and is really "we asked for a
-     * second window on a platform that has exactly one". */
-    if (!initgl && sdl.desktop.want_type != SCREEN_GAMELINK) {
+     * which reads like a driver fault and is nothing of the kind.
+     *
+     * So: take the host's window, and back sdl.surface with a plain offscreen
+     * surface. Note we do NOT use SDL_GetWindowSurface here -- the host has a
+     * renderer on that window, and SDL refuses to hand out a window surface
+     * for a window that has one. Nothing draws through sdl.surface in Game
+     * Link mode anyway; it exists so the rest of the engine has something
+     * non-null to inspect. */
+    if (!initgl && sdl.desktop.want_type == SCREEN_GAMELINK && retrodos_host_embedded()) {
+        sdl.window  = (SDL_Window *)retrodos_host_window();
+        sdl.surface = SDL_CreateSurface(640, 400, SDL_PIXELFORMAT_XRGB8888);
+        if (sdl.surface == NULL)
+            E_Exit("Could not create the offscreen surface: %s", SDL_GetError());
+    }
+    else if (!initgl) {
         GFX_SetResizeable(true);
         if (!GFX_SetSDLSurfaceWindow(640,400))
             E_Exit("Could not initialize video: %s",SDL_GetError());

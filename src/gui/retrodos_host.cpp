@@ -224,6 +224,19 @@ extern "C" bool retrodos_host_embedded(void)
     return g_embedded.load();
 }
 
+/* The host's window, if it gave us one. Read by sdlmain.cpp at startup. */
+static std::atomic<void *> g_host_window{nullptr};
+
+extern "C" void retrodos_host_set_window(void *sdl_window)
+{
+    g_host_window.store(sdl_window);
+}
+
+extern "C" void *retrodos_host_window(void)
+{
+    return g_host_window.load();
+}
+
 extern "C" int retrodos_host_run(int argc, char **argv)
 {
     g_embedded.store(true);

@@ -78,6 +78,17 @@ RETRODOS_HOST_API void retrodos_host_reset(bool hard);
 /* 1 while the mainloop is running, 0 otherwise. */
 RETRODOS_HOST_API bool retrodos_host_is_running(void);
 
+/* Hand the engine the host's SDL_Window (as void* so this header stays free of
+ * SDL types). Call BEFORE run().
+ *
+ * Game Link renders offscreen, but the engine was never designed to run with
+ * NO window at all -- on desktop it creates one regardless and later code
+ * assumes sdl.window is valid. Suppressing creation therefore just moves the
+ * failure to the first dereference. On a platform that allows exactly one
+ * window (Android), and where the host already owns it, the honest answer is
+ * to let the engine adopt the host's rather than ask for a second. */
+RETRODOS_HOST_API void retrodos_host_set_window(void *sdl_window);
+
 /* ------------------------------------------------------------------ */
 /* Input                                                               */
 /* ------------------------------------------------------------------ */

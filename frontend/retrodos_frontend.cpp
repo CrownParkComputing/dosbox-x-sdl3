@@ -176,8 +176,14 @@ std::string write_conf(const std::string &conf_path, const std::string &pref_dir
 
 std::atomic<bool> g_engine_done{false};
 
+SDL_Window *g_host_window = nullptr;
+
 void engine_thread(std::string conf, std::string defaultdir)
 {
+    /* The engine adopts this rather than creating a second window -- see
+     * retrodos_host_set_window() for why that matters on Android. */
+    retrodos_host_set_window(g_host_window);
+
     char a0[] = "dosbox-x";
     char a1[] = "-conf";
     char a3[] = "-defaultdir";
@@ -252,6 +258,7 @@ int main(int argc, char **argv)
         return 1;
     }
     SDL_SetRenderVSync(ren, 1);
+    g_host_window = win;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
