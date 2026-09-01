@@ -144,3 +144,11 @@ contrib/macos/dosbox-x.plist
 
 # Android core build outputs (SDL3 checkout, per-ABI trees, .so)
 /android/build/
+
+# Android app build outputs. The .so/.jar under app/ are produced by
+# android/build-core.sh, not source.
+/android/.gradle/
+/android/local.properties
+/android/app/build/
+/android/app/libs/
+/android/app/src/main/jniLibs/

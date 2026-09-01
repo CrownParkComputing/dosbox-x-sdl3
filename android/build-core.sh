@@ -150,6 +150,14 @@ for a in $(cd src && ls */lib*.a */*/lib*.a 2>/dev/null); do :; done
 # hardware/mame, hardware/reSID) and the failure only appears at dlopen as an
 # undefined symbol. LDADD also repeats libgui.a, which is harmless normally
 # but is a duplicate-symbol error under --whole-archive, so it is deduped.
+# -lz because the engine uses zlib (zipfile, ZMBV) and configure only adds it
+# when its own probe finds it, which a cross build may not.
+#
+# -Wl,--no-undefined is the important one. A shared library links happily with
+# unresolved symbols by default, so a missing -l shows up on the DEVICE as
+#   dlopen failed: cannot locate symbol "inflateInit2_"
+# and the app dies instantly with no crash and no stack. Failing the LINK
+# instead turns a device-only mystery into a build error naming the symbol.
 echo "==> linking libretrodos.so"
 LDADD_RAW="$(make -C src -s --eval='__print_ldadd:; @echo $(dosbox_x_LDADD)' __print_ldadd)"
 [ -n "$LDADD_RAW" ] || { echo "error: could not read dosbox_x_LDADD" >&2; exit 1; }
@@ -169,8 +177,8 @@ done
     -Wl,--whole-archive $ARCHIVES "$TREE"/src/*.o -Wl,--no-whole-archive \
     -L"$SDL3_PREFIX/lib" -lSDL3 \
     $LIBS_LINE $EXTRA \
-    -lm -ldl -llog -landroid \
-    -Wl,--no-undefined-version
+    -lm -ldl -llog -landroid -lz \
+    -Wl,--no-undefined -Wl,--no-undefined-version
 
 # ---------------------------------------------------------------------------
 # 4. Prove the ABI is actually there

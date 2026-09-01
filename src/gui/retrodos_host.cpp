@@ -222,6 +222,40 @@ extern "C" int retrodos_host_run(int argc, char **argv)
     return rc;
 }
 
+#if defined(__ANDROID__)
+/* SDL3's Android activity starts the app by dlsym'ing "SDL_main" out of the
+ * loaded library and calling it on its own thread. DOSBox-X's entry point is
+ * plain main(), which SDL3 does NOT rename for us (unlike SDL2, SDL3 only
+ * defines main->SDL_main when <SDL3/SDL_main.h> is included, and the engine
+ * does not include it). Without this the activity loads the library fine and
+ * then dies looking for a symbol that was never there. */
+extern "C" RETRODOS_HOST_API int SDL_main(int argc, char **argv)
+{
+    /* DOSBox-X narrates its whole startup on stdout/stderr -- config parse,
+     * SDL init, machine build, COMMAND.COM. On Android that output goes
+     * nowhere, so a boot that fails early is completely silent: the app just
+     * disappears. Redirect it to a file the host can read back.
+     *
+     * Unbuffered on purpose: if the engine dies, a buffered log is lost
+     * exactly when it is the only evidence. */
+    const char *ext = SDL_GetAndroidExternalStoragePath();
+    if (ext != NULL) {
+        char path[1024];
+        SDL_snprintf(path, sizeof(path), "%s/retrodos-stdout.log", ext);
+        if (freopen(path, "w", stdout) != NULL) setvbuf(stdout, NULL, _IONBF, 0);
+        if (freopen(path, "a", stderr) != NULL) setvbuf(stderr, NULL, _IONBF, 0);
+    }
+    SDL_Log("retrodos: SDL_main entered, argc=%d", argc);
+    for (int i = 0; i < argc; ++i) SDL_Log("retrodos: argv[%d]=%s", i, argv[i]);
+
+    const int rc = retrodos_host_run(argc, argv);
+
+    SDL_Log("retrodos: engine returned %d", rc);
+    fflush(stdout); fflush(stderr);
+    return rc;
+}
+#endif
+
 extern "C" void retrodos_host_quit(void)
 {
     Request r; r.kind = Request::Quit; queue(r);
