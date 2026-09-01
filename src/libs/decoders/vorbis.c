@@ -48,6 +48,20 @@
 #  define memset SDL_memset
 #endif
 
+/* This file is #included into a C++ translation unit (cdrom_image.cpp), and
+ * the macro below rewrites every later `qsort` token -- including the
+ * `std::qsort` declaration inside <cstdlib>, which then reads as
+ * `std::SDL_qsort` and fails to compile. Pulling <cstdlib> in FIRST means its
+ * include guard has already fired by the time anything else asks for it, so
+ * the declaration is never seen through the macro.
+ *
+ * Whether this bites depends on which header happens to reach <cstdlib>
+ * first, which is why it built against one SDL3 point release and not
+ * another. Making it explicit removes the coin toss. */
+#ifdef __cplusplus
+#  include <cstdlib>
+#endif
+
 #define qsort        SDL_qsort
 #define memcmp       SDL_memcmp
 #define dealloca(x)  SDL_stack_free((x))
