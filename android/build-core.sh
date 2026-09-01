@@ -121,8 +121,22 @@ fi
 
 grep -q '^#define C_SDL3 1' config.h || { echo "error: SDL3 not selected" >&2; exit 1; }
 
+# Bionic folds librt and iconv into libc, so there are no separate -lrt/-liconv
+# to link against. configure adds them for Linux hosts regardless, and the
+# result is a link that dies with "unable to find library -lrt" AFTER every
+# object has compiled successfully.
+echo "==> dropping -lrt/-liconv (bionic has both in libc)"
+find . -name Makefile -exec sed -i 's/ -lrt\b//g; s/ -liconv\b//g' {} +
+
+# The engine's own `all` target ends by linking the dosbox-x EXECUTABLE, which
+# is meaningless on Android (no main, and we want a library). -k lets the
+# archives finish; the shared library is linked from them below, and the ABI
+# check at the end is what actually decides whether this build succeeded.
 echo "==> building the engine ($JOBS jobs)"
-make -j"$JOBS"
+make -k -j"$JOBS" || true
+
+for a in $(cd src && ls */lib*.a */*/lib*.a 2>/dev/null); do :; done
+[ -f src/gui/libgui.a ] || { echo "error: engine archives were not built" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # 3. Link the engine into one shared library
@@ -173,6 +187,16 @@ done
 echo "==> SDL linkage:"
 "$TOOLCHAIN/bin/llvm-readelf" -d "$OUT/libretrodos.so" | grep -i 'NEEDED.*SDL' || true
 
+# Everything the app has to package. libc++_shared is a real runtime
+# dependency of the core (NEEDED in the ELF header), not an optional extra --
+# leaving it out fails at System.loadLibrary time, not at build time.
 cp -f "$SDL3_PREFIX/lib/libSDL3.so" "$OUT/"
-echo "==> done:"
-ls -lh "$OUT/libretrodos.so" "$OUT/libSDL3.so"
+CXX_SHARED="$TOOLCHAIN/sysroot/usr/lib/$TRIPLE/libc++_shared.so"
+[ -f "$CXX_SHARED" ] || CXX_SHARED="$(find "$TOOLCHAIN" -name libc++_shared.so -path "*$TRIPLE*" | head -1)"
+[ -f "$CXX_SHARED" ] && cp -f "$CXX_SHARED" "$OUT/" || echo "warning: libc++_shared.so not found" >&2
+
+# The SDL3 Java glue an SDL3 Android activity needs.
+find "$SDL3_PREFIX" -name 'SDL3-*.jar' ! -name '*sources*' -exec cp -f {} "$OUT/SDL3.jar" \; 2>/dev/null || true
+
+echo "==> done ($ANDROID_ABI):"
+ls -lh "$OUT"/libretrodos.so "$OUT"/libSDL3.so "$OUT"/libc++_shared.so "$OUT"/SDL3.jar 2>/dev/null

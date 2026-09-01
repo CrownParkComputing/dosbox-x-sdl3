@@ -11393,6 +11393,12 @@ startfunction:
 
         BIOS_Int10RightJustifiedPrint(x,y,msg);
 
+#if C_LIBPNG
+        /* The graphical BIOS logo is decoded with libpng. Its helpers and
+         * the embedded PNGs above already sit inside #if C_LIBPNG, but this
+         * block did not -- so a build without libpng (any target lacking it,
+         * e.g. Android) failed here with a wall of 'unknown type name
+         * png_structp'. Guard it to match; the text splash below still runs. */
         {
             png_bytep rows[1];
             unsigned char *row = NULL;/*png_width*/
@@ -11545,6 +11551,7 @@ startfunction:
             if (png_context) png_destroy_read_struct(&png_context,&png_info,&png_end);
             if (png_fp) fclose(png_fp);
         }
+#endif /* C_LIBPNG */
 
         if (machine == MCH_PC98 && textsplash) {
             unsigned int bo, lastline = 7;
