@@ -30,6 +30,7 @@
 #include "retrodos_saf.h"
 #include "retrodos_demo.h"
 #include "retrodos_media.h"
+#include "retrodos_pad.h"
 
 #include <algorithm>
 #include <map>
@@ -356,6 +357,60 @@ std::string library_label(const std::string &root)
     return out;
 }
 
+/* ------------------------------------------------------------------ */
+/* Pad layout persistence                                              */
+/* ------------------------------------------------------------------ */
+
+/* "button,x,y,r;..." -- fractions, so a layout moved on one screen is still
+ * where the thumb expects it on another. */
+std::string pad_layout_to_string(const std::vector<retrodos::PadControl> &v)
+{
+    std::string s;
+    char buf[96];
+    for (const retrodos::PadControl &c : v) {
+        SDL_snprintf(buf, sizeof(buf), "%d,%.4f,%.4f,%.4f;",
+                     c.button, c.x, c.y, c.radius);
+        s += buf;
+    }
+    return s;
+}
+
+bool pad_layout_from_string(const std::string &s,
+                            std::vector<retrodos::PadControl> &out)
+{
+    std::vector<retrodos::PadControl> v;
+    size_t i = 0;
+    while (i < s.size()) {
+        const size_t e = s.find(';', i);
+        if (e == std::string::npos) break;
+        const std::string rec = s.substr(i, e - i);
+        i = e + 1;
+
+        int b = 0; float x = 0, y = 0, r = 0;
+        if (SDL_sscanf(rec.c_str(), "%d,%f,%f,%f", &b, &x, &y, &r) != 4) continue;
+        if (b < 0 || b >= retrodos::PAD_COUNT) continue;
+
+        retrodos::PadControl c;
+        c.button = b;
+        c.label  = retrodos::pad_button_name(b);
+        /* The default layout's labels are terser than the button names. */
+        switch (b) {
+        case retrodos::PAD_UP:     c.label = "^";   break;
+        case retrodos::PAD_DOWN:   c.label = "v";   break;
+        case retrodos::PAD_LEFT:   c.label = "<";   break;
+        case retrodos::PAD_RIGHT:  c.label = ">";   break;
+        case retrodos::PAD_START:  c.label = "Ent"; break;
+        case retrodos::PAD_SELECT: c.label = "Esc"; break;
+        default: break;
+        }
+        c.x = x; c.y = y; c.radius = r;
+        v.push_back(c);
+    }
+    if (v.empty()) return false;
+    out.swap(v);
+    return true;
+}
+
 bool path_is_dir(const std::string &p)
 {
     SDL_PathInfo info;
@@ -420,6 +475,94 @@ SDL_FRect fit(int fb_w, int fb_h, int aspect_x1000, int win_w, int win_h,
 /* ------------------------------------------------------------------ */
 /* Settings UI (shared by global defaults and per-game overrides)      */
 /* ------------------------------------------------------------------ */
+
+/* The keys a DOS game is actually bound to, offered as a list.
+ *
+ * A "press the key you want" binder is the obvious design and the wrong one
+ * here: the device this runs on has no keyboard, so there would be no way to
+ * answer the prompt. */
+struct KeyChoice { int scancode; const char *name; };
+
+const KeyChoice kKeyChoices[] = {
+    { 0,                       "(none)"    },
+    { SDL_SCANCODE_UP,         "Up"        },
+    { SDL_SCANCODE_DOWN,       "Down"      },
+    { SDL_SCANCODE_LEFT,       "Left"      },
+    { SDL_SCANCODE_RIGHT,      "Right"     },
+    { SDL_SCANCODE_LCTRL,      "Ctrl"      },
+    { SDL_SCANCODE_LALT,       "Alt"       },
+    { SDL_SCANCODE_LSHIFT,     "Shift"     },
+    { SDL_SCANCODE_SPACE,      "Space"     },
+    { SDL_SCANCODE_RETURN,     "Enter"     },
+    { SDL_SCANCODE_ESCAPE,     "Esc"       },
+    { SDL_SCANCODE_TAB,        "Tab"       },
+    { SDL_SCANCODE_BACKSPACE,  "Backspace" },
+    { SDL_SCANCODE_PAGEUP,     "PgUp"      },
+    { SDL_SCANCODE_PAGEDOWN,   "PgDn"      },
+    { SDL_SCANCODE_HOME,       "Home"      },
+    { SDL_SCANCODE_END,        "End"       },
+    { SDL_SCANCODE_INSERT,     "Insert"    },
+    { SDL_SCANCODE_DELETE,     "Delete"    },
+    { SDL_SCANCODE_A, "A" }, { SDL_SCANCODE_B, "B" }, { SDL_SCANCODE_C, "C" },
+    { SDL_SCANCODE_D, "D" }, { SDL_SCANCODE_E, "E" }, { SDL_SCANCODE_F, "F" },
+    { SDL_SCANCODE_G, "G" }, { SDL_SCANCODE_H, "H" }, { SDL_SCANCODE_I, "I" },
+    { SDL_SCANCODE_J, "J" }, { SDL_SCANCODE_K, "K" }, { SDL_SCANCODE_L, "L" },
+    { SDL_SCANCODE_M, "M" }, { SDL_SCANCODE_N, "N" }, { SDL_SCANCODE_O, "O" },
+    { SDL_SCANCODE_P, "P" }, { SDL_SCANCODE_Q, "Q" }, { SDL_SCANCODE_R, "R" },
+    { SDL_SCANCODE_S, "S" }, { SDL_SCANCODE_T, "T" }, { SDL_SCANCODE_U, "U" },
+    { SDL_SCANCODE_V, "V" }, { SDL_SCANCODE_W, "W" }, { SDL_SCANCODE_X, "X" },
+    { SDL_SCANCODE_Y, "Y" }, { SDL_SCANCODE_Z, "Z" },
+    { SDL_SCANCODE_1, "1" }, { SDL_SCANCODE_2, "2" }, { SDL_SCANCODE_3, "3" },
+    { SDL_SCANCODE_4, "4" }, { SDL_SCANCODE_5, "5" }, { SDL_SCANCODE_6, "6" },
+    { SDL_SCANCODE_7, "7" }, { SDL_SCANCODE_8, "8" }, { SDL_SCANCODE_9, "9" },
+    { SDL_SCANCODE_0, "0" },
+    { SDL_SCANCODE_F1, "F1" }, { SDL_SCANCODE_F2, "F2" }, { SDL_SCANCODE_F3, "F3" },
+    { SDL_SCANCODE_F4, "F4" }, { SDL_SCANCODE_F5, "F5" }, { SDL_SCANCODE_F6, "F6" },
+    { SDL_SCANCODE_F7, "F7" }, { SDL_SCANCODE_F8, "F8" }, { SDL_SCANCODE_F9, "F9" },
+    { SDL_SCANCODE_F10, "F10" },
+};
+
+const char *key_name(int scancode)
+{
+    for (const KeyChoice &k : kKeyChoices)
+        if (k.scancode == scancode) return k.name;
+    return "(other)";
+}
+
+void controls_widgets(Settings &s)
+{
+    ImGui::TextUnformatted("Controls");
+    ImGui::Checkbox("On-screen controls when no gamepad is connected",
+                    &s.onscreen_pad);
+    ImGui::TextDisabled("A connected gamepad hides them automatically.");
+
+    ImGui::Spacing();
+    ImGui::Checkbox("Buttons send keys", &s.pad_sends_keys);
+    ImGui::Checkbox("Buttons drive the joystick port", &s.pad_sends_joystick);
+    ImGui::TextDisabled("Most DOS games are keyboard games, so keys are the\n"
+                        "default. Turn the joystick on only for titles that\n"
+                        "actually support one.");
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Key for each button");
+
+    for (int b = 0; b < retrodos::PAD_COUNT; ++b) {
+        ImGui::PushID(b);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
+        if (ImGui::BeginCombo(retrodos::pad_button_name(b), key_name(s.pad_keys[b]))) {
+            for (const KeyChoice &k : kKeyChoices) {
+                const bool sel = (s.pad_keys[b] == k.scancode);
+                if (ImGui::Selectable(k.name, sel)) s.pad_keys[b] = k.scancode;
+                if (sel) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::PopID();
+    }
+
+    if (ImGui::Button("Reset to DOS defaults", ImVec2(0, 0)))
+        retrodos::default_pad_keys(s.pad_keys);
+}
 
 void settings_widgets(Settings &s)
 {
@@ -536,6 +679,16 @@ int main(int argc, char **argv)
     AppConfig cfg;
     retrodos::load_app_config(cfg_path, cfg);
 
+    /* A config written before controls existed has no bindings at all, and an
+     * all-zero table means every button is unbound -- the pad would draw and do
+     * nothing. Seed it once; after that the user's choices persist. */
+    {
+        bool any = false;
+        for (int i = 0; i < retrodos::PAD_COUNT; ++i)
+            if (cfg.defaults.pad_keys[i]) { any = true; break; }
+        if (!any) retrodos::default_pad_keys(cfg.defaults.pad_keys);
+    }
+
     std::vector<std::string> roots = candidate_roots();
     for (const auto &r : roots) SDL_CreateDirectory(r.c_str());
     if (cfg.library_root.empty() && !roots.empty()) cfg.library_root = roots.front();
@@ -610,6 +763,57 @@ int main(int argc, char **argv)
 
     char  search[128] = {0};
     char  filter_letter = 0;      /* 0 = no A-Z filter */
+
+    /* ---- Controls ----
+     *
+     * The glass pad and a physical gamepad produce the SAME button mask, and
+     * only that mask is translated into keys or stick movement. A DOS game
+     * cannot tell the two apart and neither does anything below here. */
+    retrodos::VirtualPad pad;
+    {
+        int ww = 0, wh = 0;
+        SDL_GetWindowSizeInPixels(win, &ww, &wh);
+        pad.reset_layout(ww, wh);
+        std::vector<retrodos::PadControl> saved;
+        if (pad_layout_from_string(cfg.pad_layout, saved)) pad.set_controls(saved);
+    }
+    std::vector<SDL_Gamepad *> gamepads;
+    unsigned gp_buttons = 0;      /* PAD_* bits from a physical gamepad */
+    int      gp_axis_x = 0, gp_axis_y = 0;   /* -1000..1000, analog stick */
+    unsigned pad_prev = 0;        /* last mask applied to the guest */
+
+    auto refresh_gamepads = [&]() {
+        for (SDL_Gamepad *g : gamepads) SDL_CloseGamepad(g);
+        gamepads.clear();
+        int n = 0;
+        if (SDL_JoystickID *ids = SDL_GetGamepads(&n)) {
+            for (int i = 0; i < n; ++i)
+                if (SDL_Gamepad *g = SDL_OpenGamepad(ids[i])) gamepads.push_back(g);
+            SDL_free(ids);
+        }
+        if (gamepads.empty()) { gp_buttons = 0; gp_axis_x = gp_axis_y = 0; }
+        pad.set_gamepad_present(!gamepads.empty());
+    };
+    refresh_gamepads();
+
+    /* Turn one SDL gamepad button into a virtual one. */
+    auto gp_bit = [](int b) -> int {
+        switch (b) {
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:        return retrodos::PAD_UP;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:      return retrodos::PAD_DOWN;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:      return retrodos::PAD_LEFT;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:     return retrodos::PAD_RIGHT;
+        case SDL_GAMEPAD_BUTTON_SOUTH:          return retrodos::PAD_A;
+        case SDL_GAMEPAD_BUTTON_EAST:           return retrodos::PAD_B;
+        case SDL_GAMEPAD_BUTTON_WEST:           return retrodos::PAD_X;
+        case SDL_GAMEPAD_BUTTON_NORTH:          return retrodos::PAD_Y;
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:  return retrodos::PAD_L;
+        case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return retrodos::PAD_R;
+        case SDL_GAMEPAD_BUTTON_START:          return retrodos::PAD_START;
+        case SDL_GAMEPAD_BUTTON_BACK:           return retrodos::PAD_SELECT;
+        default:                                return -1;
+        }
+    };
 
     /* ---- RetroMedia ---- */
     retrodos::MediaAccount account;
@@ -687,7 +891,14 @@ int main(int argc, char **argv)
         view = View::Emulator;
     };
 
+    int win_w = 0, win_h = 0;
+
     while (running) {
+        /* Fetched BEFORE the event loop: touch hit-testing needs the size,
+         * and querying it afterwards would test this frame's fingers against
+         * last frame's dimensions -- wrong for exactly one frame after every
+         * rotation, which is when a control has just moved. */
+        SDL_GetWindowSizeInPixels(win, &win_w, &win_h);
         /* True when the UI is covering the game and DOS should see nothing. */
         const bool ui_modal = (view != View::Emulator) || show_overlay || show_osk;
 
@@ -738,7 +949,104 @@ int main(int argc, char **argv)
                 }
                 break;
 
+            case SDL_EVENT_GAMEPAD_ADDED:
+            case SDL_EVENT_GAMEPAD_REMOVED:
+                /* Re-enumerate rather than track deltas: a handheld's built-in
+                 * controls can appear and vanish around sleep, and a miscounted
+                 * delta would leave the glass pad hidden with nothing to play
+                 * with. */
+                refresh_gamepads();
+                break;
+
+            case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+                const int b = gp_bit(ev.gbutton.button);
+                if (b >= 0) {
+                    if (ev.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) gp_buttons |=  (1u << b);
+                    else                                          gp_buttons &= ~(1u << b);
+                }
+                break;
+            }
+
+            case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+                /* The left stick drives the emulated stick directly, and also
+                 * synthesises direction presses so a keyboard game is playable
+                 * with it. The dead zone is generous: a worn thumbstick that
+                 * rests off-centre would otherwise hold a direction forever. */
+                const int v = ev.gaxis.value;                 /* -32768..32767 */
+                const int scaled = (int)((long)v * 1000 / 32767);
+                const int kDead = 380;                        /* ~38% */
+
+                if (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX) {
+                    gp_axis_x = scaled;
+                    gp_buttons &= ~((1u << retrodos::PAD_LEFT) | (1u << retrodos::PAD_RIGHT));
+                    if (scaled < -kDead) gp_buttons |= 1u << retrodos::PAD_LEFT;
+                    if (scaled >  kDead) gp_buttons |= 1u << retrodos::PAD_RIGHT;
+                } else if (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) {
+                    gp_axis_y = scaled;
+                    gp_buttons &= ~((1u << retrodos::PAD_UP) | (1u << retrodos::PAD_DOWN));
+                    if (scaled < -kDead) gp_buttons |= 1u << retrodos::PAD_UP;
+                    if (scaled >  kDead) gp_buttons |= 1u << retrodos::PAD_DOWN;
+                }
+                break;
+            }
+
+            case SDL_EVENT_FINGER_DOWN:
+            case SDL_EVENT_FINGER_UP:
+            case SDL_EVENT_FINGER_MOTION:
+                /* Only while the game is in front: elsewhere a finger is a
+                 * mouse click on the UI, which ImGui has already had. */
+                if (view == View::Emulator && !show_overlay && !show_osk)
+                    pad.handle_event(ev, win_w, win_h);
+                break;
+
             default: break;
+            }
+        }
+
+        /* ---- Deliver the pad to the guest ----
+         *
+         * One mask from both sources, applied on CHANGE only. Re-sending a held
+         * button every frame would look to DOS like the key repeating at 60Hz,
+         * which turns a menu selection into a blur. */
+        if (view == View::Emulator) {
+            const unsigned mask = pad.held() | gp_buttons;
+            if (mask != pad_prev) {
+                if (active.pad_sends_keys) {
+                    const unsigned changed = mask ^ pad_prev;
+                    for (int b = 0; b < retrodos::PAD_COUNT; ++b) {
+                        if (!(changed & (1u << b))) continue;
+                        const int sc = active.pad_keys[b];
+                        if (sc) retrodos_host_send_key(sc, (mask & (1u << b)) != 0);
+                    }
+                }
+
+                if (active.pad_sends_joystick) {
+                    /* An analog stick is passed through as-is; the glass pad
+                     * and a d-pad can only be full deflection. */
+                    int ax = gp_axis_x, ay = gp_axis_y;
+                    if (!pad.gamepad_present()) {
+                        ax = (mask & (1u << retrodos::PAD_RIGHT)) ?  1000 :
+                             (mask & (1u << retrodos::PAD_LEFT))  ? -1000 : 0;
+                        ay = (mask & (1u << retrodos::PAD_DOWN))  ?  1000 :
+                             (mask & (1u << retrodos::PAD_UP))    ? -1000 : 0;
+                    }
+                    /* The standard game port has two buttons, so only A and B
+                     * reach it; everything else is a key. */
+                    const int jmask = ((mask & (1u << retrodos::PAD_A)) ? 1 : 0) |
+                                      ((mask & (1u << retrodos::PAD_B)) ? 2 : 0);
+                    retrodos_host_joystick(0, jmask, ax, ay);
+                }
+                pad_prev = mask;
+            } else if (active.pad_sends_joystick && pad.gamepad_present() &&
+                       (gp_axis_x || gp_axis_y)) {
+                /* Analog movement inside the dead zone changes no button bit,
+                 * so without this the stick would only update when it crossed
+                 * a threshold -- fine for a d-pad game, useless for a flight
+                 * sim. */
+                const int jmask = ((mask & (1u << retrodos::PAD_A)) ? 1 : 0) |
+                                  ((mask & (1u << retrodos::PAD_B)) ? 2 : 0);
+                retrodos_host_joystick(0, jmask, gp_axis_x, gp_axis_y);
             }
         }
 
@@ -841,8 +1149,6 @@ int main(int argc, char **argv)
             }
         }
 
-        int win_w = 0, win_h = 0;
-        SDL_GetWindowSizeInPixels(win, &win_w, &win_h);
 
         /* ImGui's SDL_Renderer backend sets a clip rect per draw command;
          * reset the render state so each frame starts from a known one. */
@@ -1097,6 +1403,9 @@ int main(int argc, char **argv)
 
                 ImGui::BeginChild("##sset", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.6f));
                 settings_widgets(edit);
+                ImGui::Spacing();
+                ImGui::Separator();
+                controls_widgets(edit);
                 if (per_game) {
                     ImGui::Spacing();
                     ImGui::TextDisabled("Saved for this game only; others keep the defaults.");
@@ -1359,6 +1668,32 @@ int main(int argc, char **argv)
                 if (ImGui::Button("Ctrl+Alt+Del", bw)) {
                     retrodos::osk_send_ctrl_alt_del(); show_overlay = false;
                 }
+
+                /* Laying the controls out belongs here rather than on the
+                 * settings page: where a button should sit depends on what the
+                 * game is showing underneath it, so it has to be done with the
+                 * game on screen. */
+                if (pad.gamepad_present()) {
+                    ImGui::TextDisabled("Gamepad connected");
+                } else if (pad.enabled()) {
+                    if (ImGui::Button(pad.editing() ? "Done moving controls"
+                                                    : "Move controls", bw)) {
+                        const bool now = !pad.editing();
+                        pad.set_editing(now);
+                        show_overlay = false;
+                        if (!now) {
+                            /* Persist on leaving edit mode: a layout that is
+                             * lost on exit is worse than none. */
+                            cfg.pad_layout = pad_layout_to_string(pad.controls());
+                            retrodos::save_app_config(cfg_path, cfg);
+                        }
+                    }
+                    if (pad.editing() && ImGui::Button("Reset control layout", bw)) {
+                        pad.reset_layout(win_w, win_h);
+                        cfg.pad_layout = pad_layout_to_string(pad.controls());
+                        retrodos::save_app_config(cfg_path, cfg);
+                    }
+                }
                 if (ImGui::Button("Reset machine", bw)) {
                     retrodos_host_reset(true); show_overlay = false;
                 }
@@ -1389,6 +1724,12 @@ int main(int argc, char **argv)
                 if (ImGui::Button(show_osk ? "Hide keys" : "Keyboard")) show_osk = !show_osk;
                 ImGui::End();
             }
+
+            /* Under the OSK and the overlay: when either is up the player is
+             * not driving the game, and a pad drawn on top of a keyboard is
+             * just clutter. */
+            if (view == View::Emulator && !show_osk && !show_overlay)
+                pad.draw(win_w, win_h);
 
             if (view == View::Emulator && show_osk)
                 retrodos::osk_draw(full.x, full.y);

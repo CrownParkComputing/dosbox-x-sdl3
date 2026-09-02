@@ -40,19 +40,56 @@ struct Settings {
     /* Integer scaling is sharper but leaves bigger borders on a handheld. */
     bool        integer_scale  = false;
 
+    /* ---- controls ----
+     *
+     * What each virtual button (on-screen or gamepad -- they are the same
+     * buttons) sends, as an SDL scancode. Per game, because DOS never agreed
+     * on a control scheme: Descent wants the arrows and Ctrl, Keen wants Ctrl
+     * and Alt for jump and pogo, and a flight sim wants the stick.
+     *
+     * 0 means unbound. Indexed by PadButton; sized to PAD_COUNT, which is 12.
+     */
+    int         pad_keys[12] = {0};
+
+    /* Drive the emulated game port as well as (or instead of) sending keys.
+     * Most DOS games are keyboard games, so keys are the default; a game that
+     * genuinely wants a stick can be switched over per title. */
+    bool        pad_sends_keys      = true;
+    bool        pad_sends_joystick  = false;
+
+    /* Whether the on-screen controls are wanted. Independent of whether a
+     * gamepad is plugged in: that is a fact about the hardware right now, this
+     * is what the user asked for. */
+    bool        onscreen_pad        = true;
+
     bool operator==(const Settings &o) const {
+        for (int i = 0; i < 12; ++i)
+            if (pad_keys[i] != o.pad_keys[i]) return false;
         return cycles_max == o.cycles_max && cycles_fixed == o.cycles_fixed &&
                core_dynamic == o.core_dynamic && memsize == o.memsize &&
                sbtype == o.sbtype && aspect_correct == o.aspect_correct &&
-               integer_scale == o.integer_scale;
+               integer_scale == o.integer_scale &&
+               pad_sends_keys == o.pad_sends_keys &&
+               pad_sends_joystick == o.pad_sends_joystick &&
+               onscreen_pad == o.onscreen_pad;
     }
 };
+
+/** The keys a DOS game most often wants, used when nothing has been bound.
+ *  Fills all PAD_COUNT entries of Settings::pad_keys. */
+void default_pad_keys(int *keys);
 
 /* App-level state that is not per-game. */
 struct AppConfig {
     std::string library_root;      /* where games live                    */
     bool        wizard_done = false;
     Settings    defaults;
+
+    /* On-screen control positions, as "button,x,y,r;..." with x/y/r as
+     * fractions. Held as an opaque string so this layer keeps knowing nothing
+     * about the pad -- it is one layout for the device, not per game, because
+     * where a thumb comfortably rests does not change with the title. */
+    std::string pad_layout;
 };
 
 bool load_app_config(const std::string &path, AppConfig &out);

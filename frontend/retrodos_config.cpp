@@ -73,6 +73,17 @@ void append_settings(std::string &s, const Settings &v)
     s += "sbtype=";         s += v.sbtype;                     s += "\n";
     s += "aspect_correct="; s += v.aspect_correct ? "1" : "0"; s += "\n";
     s += "integer_scale=";  s += v.integer_scale ? "1" : "0";  s += "\n";
+    s += "pad_sends_keys=";     s += v.pad_sends_keys ? "1" : "0";     s += "\n";
+    s += "pad_sends_joystick="; s += v.pad_sends_joystick ? "1" : "0"; s += "\n";
+    s += "onscreen_pad=";       s += v.onscreen_pad ? "1" : "0";       s += "\n";
+    /* One line, so a per-game override file stays readable and a hand edit is
+     * a single change rather than twelve. */
+    s += "pad_keys=";
+    for (int i = 0; i < 12; ++i) {
+        if (i) s += ",";
+        s += std::to_string(v.pad_keys[i]);
+    }
+    s += "\n";
 }
 
 void read_settings(const std::map<std::string, std::string> &kv, Settings &v)
@@ -84,6 +95,21 @@ void read_settings(const std::map<std::string, std::string> &kv, Settings &v)
     v.sbtype         = as_str (kv, "sbtype", v.sbtype);
     v.aspect_correct = as_bool(kv, "aspect_correct", v.aspect_correct);
     v.integer_scale  = as_bool(kv, "integer_scale", v.integer_scale);
+    v.pad_sends_keys     = as_bool(kv, "pad_sends_keys", v.pad_sends_keys);
+    v.pad_sends_joystick = as_bool(kv, "pad_sends_joystick", v.pad_sends_joystick);
+    v.onscreen_pad       = as_bool(kv, "onscreen_pad", v.onscreen_pad);
+
+    const std::string keys = as_str(kv, "pad_keys", std::string());
+    if (!keys.empty()) {
+        int n = 0;
+        size_t i = 0;
+        while (i <= keys.size() && n < 12) {
+            size_t e = keys.find(',', i);
+            if (e == std::string::npos) e = keys.size();
+            v.pad_keys[n++] = atoi(keys.substr(i, e - i).c_str());
+            i = e + 1;
+        }
+    }
 }
 
 /* A game name becomes a filename, so it must not carry separators. */
@@ -101,6 +127,26 @@ std::string sanitise(const std::string &name)
 
 } /* namespace */
 
+void default_pad_keys(int *k)
+{
+    /* The DOS convention, not a modern console one. Arrows move; Ctrl fires
+     * and Alt is the second action in a great many titles (Keen jumps on Ctrl
+     * and pogos on Alt, Doom fires on Ctrl and uses on Space, Descent fires on
+     * Ctrl). Enter and Escape are what menus expect. */
+    k[0]  = SDL_SCANCODE_UP;
+    k[1]  = SDL_SCANCODE_DOWN;
+    k[2]  = SDL_SCANCODE_LEFT;
+    k[3]  = SDL_SCANCODE_RIGHT;
+    k[4]  = SDL_SCANCODE_LCTRL;    /* A */
+    k[5]  = SDL_SCANCODE_LALT;     /* B */
+    k[6]  = SDL_SCANCODE_SPACE;    /* X */
+    k[7]  = SDL_SCANCODE_LSHIFT;   /* Y */
+    k[8]  = SDL_SCANCODE_PAGEUP;   /* L */
+    k[9]  = SDL_SCANCODE_PAGEDOWN; /* R */
+    k[10] = SDL_SCANCODE_RETURN;   /* Start  */
+    k[11] = SDL_SCANCODE_ESCAPE;   /* Select */
+}
+
 bool load_app_config(const std::string &path, AppConfig &out)
 {
     const std::string text = read_file(path);
@@ -108,6 +154,7 @@ bool load_app_config(const std::string &path, AppConfig &out)
     const auto kv = parse_kv(text);
     out.library_root = as_str(kv, "library_root", out.library_root);
     out.wizard_done  = as_bool(kv, "wizard_done", false);
+    out.pad_layout   = as_str(kv, "pad_layout", out.pad_layout);
     read_settings(kv, out.defaults);
     return true;
 }
@@ -117,6 +164,7 @@ bool save_app_config(const std::string &path, const AppConfig &cfg)
     std::string s = "# Retro-DOS settings\n";
     s += "library_root=" + cfg.library_root + "\n";
     s += "wizard_done=";  s += cfg.wizard_done ? "1" : "0"; s += "\n";
+    if (!cfg.pad_layout.empty()) s += "pad_layout=" + cfg.pad_layout + "\n";
     append_settings(s, cfg.defaults);
     return write_file(path, s);
 }
@@ -169,6 +217,16 @@ std::string build_conf(const Settings &s, const std::string &title,
 
     c += "[sblaster]\n";
     c += "sbtype=" + s.sbtype + "\n";
+
+    c += "[joystick]\n";
+    /* "none" unless the pad is actually driving the game port. A DOS game that
+     * probes the port and finds a stick behaves differently from one that finds
+     * nothing -- several auto-select joystick control and then steer on their
+     * own from an axis nobody is touching. So the port only exists when the
+     * player has asked for it. */
+    c += std::string("joysticktype=") + (s.pad_sends_joystick ? "2axis" : "none") + "\n";
+    c += "timed=false\n";   /* untimed axes are what a synthesised stick wants */
+    c += "autofire=false\n";
 
     c += "[autoexec]\n";
     c += "mount C \"" + mount_dir + "\"\n";

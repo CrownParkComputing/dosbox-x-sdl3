@@ -47,6 +47,7 @@
 #include "video.h"
 #include "mouse.h"
 #include "mapper.h"
+#include "joystick.h"
 #include "render.h"
 #include "dos_inc.h"
 
@@ -194,10 +195,29 @@ extern "C" void retrodos_host_pump(void)
             Mouse_WheelMoved(r.a);
             break;
 
-        case Request::Joystick:
-            /* Emulated stick state is applied by the joystick module; a host
-             * with no physical stick still drives it through here. */
+        case Request::Joystick: {
+            /* Drive the emulated game port. There is no physical stick behind
+             * this: the frontend synthesises the state from a gamepad or from
+             * the on-screen pad, and the guest cannot tell the difference.
+             *
+             * Enable on first use rather than at startup. A DOS game that
+             * probes the port and finds a stick centred at rest behaves
+             * differently from one that finds no stick at all, and a title
+             * being played with touch controls or the keyboard should see the
+             * latter until the player actually uses a stick. */
+            const Bitu port = (Bitu)(r.a & 1);
+            JOYSTICK_Enable(port, true);
+
+            /* Axes arrive as -1000..1000 so the ABI stays integer-only; the
+             * joystick module wants -1.0..1.0. */
+            JOYSTICK_Move_X(port, (float)r.c / 1000.0f);
+            JOYSTICK_Move_Y(port, (float)r.d / 1000.0f);
+
+            /* Two buttons per port is what the standard game port exposes. */
+            for (Bitu b = 0; b < 2; ++b)
+                JOYSTICK_Button(port, b, (r.b & (1 << b)) != 0);
             break;
+        }
 
         case Request::Command: {
             std::vector<std::string> seq;
