@@ -92,19 +92,49 @@ bool is_modifier(int sc)
            sc == SDL_SCANCODE_LALT;
 }
 
+/* A key that has been pressed and is waiting to be released.
+ *
+ * Press and release CANNOT be sent together. Both would be drained by the same
+ * pump and reach the emulated keyboard controller within the same instant of
+ * guest time, and a DOS program that polls -- which is most of them, INT 16h in
+ * a loop -- can run no code between the two and simply never observes the key.
+ * A real key is held for tens of milliseconds; this reproduces that. */
+struct Pending {
+    int    scancode;
+    Uint64 release_at;      /* ms, SDL_GetTicks clock */
+    bool   shift, ctrl, alt;
+};
+Pending g_pending = { 0, 0, false, false, false };
+
+/* Long enough that the guest polls at least once while the key is down, short
+ * enough that it never reads as a repeat. */
+const Uint64 kHoldMs = 60;
+
 void tap(int scancode)
 {
+    /* One at a time: if a key is still held, release it before starting the
+     * next, so a fast typist cannot leave one stuck down. */
+    if (g_pending.scancode) {
+        retrodos_host_send_key(g_pending.scancode, false);
+        if (g_pending.shift) retrodos_host_send_key(SDL_SCANCODE_LSHIFT, false);
+        if (g_pending.alt)   retrodos_host_send_key(SDL_SCANCODE_LALT,   false);
+        if (g_pending.ctrl)  retrodos_host_send_key(SDL_SCANCODE_LCTRL,  false);
+        g_pending.scancode = 0;
+    }
+
     /* Modifiers first, so the guest sees them held when the key arrives. */
     if (g_ctrl)  retrodos_host_send_key(SDL_SCANCODE_LCTRL,  true);
     if (g_alt)   retrodos_host_send_key(SDL_SCANCODE_LALT,   true);
     if (g_shift) retrodos_host_send_key(SDL_SCANCODE_LSHIFT, true);
 
     retrodos_host_send_key(scancode, true);
-    retrodos_host_send_key(scancode, false);
 
-    if (g_shift) { retrodos_host_send_key(SDL_SCANCODE_LSHIFT, false); g_shift = false; }
-    if (g_alt)   { retrodos_host_send_key(SDL_SCANCODE_LALT,   false); g_alt   = false; }
-    if (g_ctrl)  { retrodos_host_send_key(SDL_SCANCODE_LCTRL,  false); g_ctrl  = false; }
+    g_pending.scancode   = scancode;
+    g_pending.release_at = SDL_GetTicks() + kHoldMs;
+    g_pending.shift = g_shift; g_pending.alt = g_alt; g_pending.ctrl = g_ctrl;
+
+    /* The latch is spent the moment it is applied. */
+    g_shift = g_alt = g_ctrl = false;
 }
 
 void draw_row(const Key *keys, int count, float unit_w, float unit_h, float gap)
@@ -150,6 +180,22 @@ void draw_row(const Key *keys, int count, float unit_w, float unit_h, float gap)
 
 } /* namespace */
 
+void osk_update(void)
+{
+    /* Releases the key held by the last tap once it has been down long enough.
+     * Called every frame, not only while the keyboard is drawn: hiding the
+     * keyboard between the press and the release would otherwise leave the key
+     * held down in the guest forever. */
+    if (!g_pending.scancode) return;
+    if (SDL_GetTicks() < g_pending.release_at) return;
+
+    retrodos_host_send_key(g_pending.scancode, false);
+    if (g_pending.shift) retrodos_host_send_key(SDL_SCANCODE_LSHIFT, false);
+    if (g_pending.alt)   retrodos_host_send_key(SDL_SCANCODE_LALT,   false);
+    if (g_pending.ctrl)  retrodos_host_send_key(SDL_SCANCODE_LCTRL,  false);
+    g_pending.scancode = 0;
+}
+
 void osk_draw(float screen_w, float screen_h)
 {
     /* Keys are RECTANGLES, not squares.
@@ -194,14 +240,11 @@ void osk_draw(float screen_w, float screen_h)
 
 void osk_send_ctrl_alt_del(void)
 {
-    /* Enough install programs and DOS shells rely on this that it deserves a
-     * dedicated button rather than three sticky taps. */
-    retrodos_host_send_key(SDL_SCANCODE_LCTRL, true);
-    retrodos_host_send_key(SDL_SCANCODE_LALT,  true);
-    retrodos_host_send_key(SDL_SCANCODE_DELETE, true);
-    retrodos_host_send_key(SDL_SCANCODE_DELETE, false);
-    retrodos_host_send_key(SDL_SCANCODE_LALT,  false);
-    retrodos_host_send_key(SDL_SCANCODE_LCTRL, false);
+    /* Routed through the same held-key path as any other key: sent as an
+     * instantaneous press and release it would land in one moment of guest time
+     * and the DOS shell would never see it. */
+    g_ctrl = g_alt = true;
+    tap(SDL_SCANCODE_DELETE);
 }
 
 } /* namespace retrodos */

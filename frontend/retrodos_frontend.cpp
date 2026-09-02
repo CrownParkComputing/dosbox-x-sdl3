@@ -826,8 +826,10 @@ int main(int argc, char **argv)
     };
     refresh();
 
-    enum class View { Wizard, Library, Settings, Media, Emulator };
-    View view = cfg.wizard_done ? View::Library : View::Wizard;
+    enum class View { Wizard, Shell, Emulator };
+    enum class Page { Library, Artwork, Downloads, Settings, Input, Demo, About };
+    View view = cfg.wizard_done ? View::Shell : View::Wizard;
+    Page page = Page::Library;
 
     std::thread engine;
     SDL_Texture *fb_tex = nullptr;
@@ -1079,6 +1081,11 @@ int main(int argc, char **argv)
             }
         }
 
+        /* Release any on-screen key whose hold time has elapsed. Every frame,
+         * not only while the keyboard is drawn: hiding it between the press and
+         * the release would leave the key held down in the guest. */
+        retrodos::osk_update();
+
         /* ---- Deliver the pad to the guest ----
          *
          * One mask from both sources, applied on CHANGE only. Re-sending a held
@@ -1274,7 +1281,7 @@ int main(int argc, char **argv)
             if (g_engine_done.load()) {
                 if (engine.joinable()) engine.join();
                 g_engine_done.store(false);
-                view = View::Library;
+                view = View::Shell;
                 show_overlay = show_osk = false;
                 refresh();
             }
@@ -1351,376 +1358,426 @@ int main(int argc, char **argv)
                     cfg.wizard_done = true;
                     retrodos::save_app_config(cfg_path, cfg);
                     refresh();
-                    view = View::Library;
+                    view = View::Shell;
                 }
                 ImGui::End();
             }
 
-            /* ---------------- Library ---------------- */
-            else if (view == View::Library) {
+            /* ---------------- Shell: nav rail + content ---------------- */
+            /* The same shape as the rest of the Retro-* family: a fixed rail
+             * on the left naming the pages, and one content pane. A handheld
+             * has no window chrome and no room for a menu bar, so the rail is
+             * the only navigation -- and being always visible, it also shows
+             * where you are. */
+            else if (view == View::Shell) {
                 ImGui::SetNextWindowPos(ImVec2(0, 0));
                 ImGui::SetNextWindowSize(full);
-                ImGui::Begin("##library", nullptr,
+                ImGui::Begin("##shell", nullptr,
                              ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-                ImGui::TextUnformatted("Retro-DOS");
-                ImGui::SameLine(full.x - 640);
-                if (retrodos::media_available()) {
-                    if (ImGui::Button(account.signed_in ? "RetroMedia *" : "RetroMedia",
-                                      ImVec2(0, 0)))
-                        view = View::Media;
-                    ImGui::SameLine();
-                }
-                if (ImGui::Button("Settings", ImVec2(0, 0))) { selected = -1; view = View::Settings; }
-                ImGui::SameLine();
-                if (ImGui::Button("Rescan", ImVec2(0, 0))) refresh();
+                const float sc      = ImGui::GetFontSize() / 20.0f;
+                const float rail_w  = 200.0f * sc;
+                const float margin  = 10.0f * sc;
+
+                ImGui::SetCursorPos(ImVec2(margin, margin));
+                ImGui::BeginChild("rail", ImVec2(rail_w, full.y - margin * 2.0f),
+                                  ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+
+                ImGui::TextUnformatted("RETRO-DOS");
                 ImGui::Separator();
 
-                /* A-Z strip: with thousands of titles, scrolling is not a
-                 * navigation method. */
-                if (ImGui::Button("All")) filter_letter = 0;
-                for (char c = 'A'; c <= 'Z'; ++c) {
-                    ImGui::SameLine(0.0f, 2.0f);
-                    ImGui::PushID((int)c);
-                    const bool on = (filter_letter == c);
+                const float bw = ImGui::GetContentRegionAvail().x;
+                const float bh = ImGui::GetFrameHeight() * 1.5f;
+                auto nav = [&](const char *label, Page p) {
+                    const bool on = (page == p);
                     if (on) ImGui::PushStyleColor(ImGuiCol_Button,
                                 ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-                    const char lbl[2] = { c, 0 };
-                    if (ImGui::Button(lbl)) filter_letter = on ? 0 : c;
+                    if (ImGui::Button(label, ImVec2(bw, bh))) { page = p; selected = -1; }
                     if (on) ImGui::PopStyleColor();
-                    ImGui::PopID();
+                };
+
+                nav("Library", Page::Library);
+                if (retrodos::media_available()) {
+                    nav("Artwork", Page::Artwork);
+                    /* Downloads is admin-only server-side, so showing it to
+                     * everyone would advertise something most accounts cannot
+                     * do. */
+                    if (account.signed_in && account.is_admin)
+                        nav("Downloads", Page::Downloads);
                 }
-                ImGui::SameLine(0.0f, 2.0f);
-                if (ImGui::Button("#")) filter_letter = (filter_letter == '#') ? 0 : '#';
+                nav("Machine",  Page::Settings);
+                nav("Input",    Page::Input);
+                ImGui::Spacing();
+                ImGui::Separator();
+                nav("Demo",  Page::Demo);
+                nav("About", Page::About);
 
-                ImGui::SetNextItemWidth(full.x * 0.5f);
-                ImGui::InputTextWithHint("##search", "Search...", search, sizeof(search));
+                ImGui::EndChild();
 
-                std::vector<int> shown;
-                shown.reserve(games.size());
-                for (int i = 0; i < (int)games.size(); ++i) {
-                    if (filter_letter && games[i].initial != filter_letter) continue;
-                    if (search[0] && !SDL_strcasestr(games[i].name.c_str(), search)) continue;
-                    shown.push_back(i);
-                }
-                ImGui::Text("%zu of %zu", shown.size(), games.size());
-                ImGui::SameLine();
-                ImGui::TextDisabled("  %s", library_label(cfg.library_root).c_str());
+                ImGui::SetCursorPos(ImVec2(rail_w + margin * 2.0f, margin));
+                ImGui::BeginChild("content",
+                                  ImVec2(full.x - rail_w - margin * 3.0f,
+                                         full.y - margin * 2.0f),
+                                  ImGuiChildFlags_Borders |
+                                  ImGuiChildFlags_AlwaysUseWindowPadding);
 
-                if (games.empty()) {
-                    ImGui::Spacing();
-                    ImGui::TextWrapped("No games found in:");
-                    ImGui::TextWrapped("%s", library_label(cfg.library_root).c_str());
-                    ImGui::Spacing();
-                    ImGui::TextWrapped("Put each game in its own folder there, then Rescan.");
-                } else {
-                    ImGui::BeginChild("##list");
-                    /* Clip: building a widget per title would cost thousands of
-                     * draw calls a frame on a real collection. */
-                    ImGuiListClipper clipper;
-                    clipper.Begin((int)shown.size());
-                    while (clipper.Step()) {
-                        for (int r = clipper.DisplayStart; r < clipper.DisplayEnd; ++r) {
-                            const int gi = shown[r];
-                            ImGui::PushID(gi);
+                const float cw = ImGui::GetContentRegionAvail().x;
 
-                            /* Box art where we have it. Sized from the row
-                             * height so the list keeps a single rhythm whether
-                             * or not a title matched the catalogue. */
-                            const float row_h = ImGui::GetFontSize() * 1.9f;
-                            auto ai = art.find(games[gi].name);
-                            if (ai != art.end() && ai->second) {
-                                SDL_Texture *t = ai->second;
-                                const float tw = (t->h > 0)
-                                    ? row_h * ((float)t->w / (float)t->h) : row_h;
-                                ImGui::Image((ImTextureID)(intptr_t)t, ImVec2(tw, row_h));
-                                ImGui::SameLine();
+                /* ---- Library ---- */
+                if (page == Page::Library) {
+                    ImGui::TextUnformatted("Library");
+                    ImGui::SameLine(cw - ImGui::CalcTextSize("Rescan").x -
+                                    ImGui::GetStyle().FramePadding.x * 4.0f);
+                    if (ImGui::Button("Rescan")) refresh();
+                    ImGui::Separator();
+
+                    ImGui::SetNextItemWidth(cw * 0.6f);
+                    ImGui::InputTextWithHint("##search", "Search local games...",
+                                             search, sizeof(search));
+
+                    /* A-Z strip: with thousands of titles, scrolling is not a
+                     * navigation method. */
+                    if (ImGui::Button("All")) filter_letter = 0;
+                    for (char c = 'A'; c <= 'Z'; ++c) {
+                        ImGui::SameLine(0.0f, 2.0f);
+                        ImGui::PushID((int)c);
+                        const bool on = (filter_letter == c);
+                        if (on) ImGui::PushStyleColor(ImGuiCol_Button,
+                                    ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                        const char lbl[2] = { c, 0 };
+                        if (ImGui::Button(lbl)) filter_letter = on ? 0 : c;
+                        if (on) ImGui::PopStyleColor();
+                        ImGui::PopID();
+                    }
+                    ImGui::SameLine(0.0f, 2.0f);
+                    if (ImGui::Button("#")) filter_letter = (filter_letter == '#') ? 0 : '#';
+
+                    std::vector<int> shown;
+                    shown.reserve(games.size());
+                    for (int i = 0; i < (int)games.size(); ++i) {
+                        if (filter_letter && games[i].initial != filter_letter) continue;
+                        if (search[0] && !SDL_strcasestr(games[i].name.c_str(), search)) continue;
+                        shown.push_back(i);
+                    }
+                    ImGui::Text("%zu of %zu", shown.size(), games.size());
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("  %s", library_label(cfg.library_root).c_str());
+
+                    if (games.empty()) {
+                        ImGui::Spacing();
+                        ImGui::TextWrapped("No games found in:");
+                        ImGui::TextWrapped("%s", library_label(cfg.library_root).c_str());
+                        ImGui::Spacing();
+                        ImGui::TextWrapped("Put each game in its own folder there and press "
+                                           "Rescan, or try the Demo page.");
+                    } else if (shown.empty()) {
+                        ImGui::Spacing();
+                        ImGui::TextDisabled("No games match this filter.");
+                    } else {
+                        ImGui::BeginChild("##list");
+                        const float row_h = ImGui::GetFontSize() * 2.2f;
+                        /* Clip: a widget per title would cost thousands of draw
+                         * calls a frame on a real collection. */
+                        ImGuiListClipper clipper;
+                        clipper.Begin((int)shown.size(), row_h);
+                        while (clipper.Step()) {
+                            for (int r = clipper.DisplayStart; r < clipper.DisplayEnd; ++r) {
+                                const int gi = shown[r];
+                                ImGui::PushID(gi);
+
+                                /* Box art where we have it, sized from the row so
+                                 * the list keeps one rhythm whether or not a title
+                                 * matched the catalogue. */
+                                auto ai = art.find(games[gi].name);
+                                if (ai != art.end() && ai->second) {
+                                    SDL_Texture *t = ai->second;
+                                    const float tw = (t->h > 0)
+                                        ? row_h * ((float)t->w / (float)t->h) : row_h;
+                                    ImGui::Image((ImTextureID)(intptr_t)t, ImVec2(tw, row_h));
+                                    ImGui::SameLine();
+                                }
+
+                                if (ImGui::Selectable(games[gi].name.c_str(), false, 0,
+                                                      ImVec2(0, row_h)))
+                                    launch(games[gi]);
+                                ImGui::SameLine(cw * 0.58f);
+                                ImGui::TextDisabled("%s", games[gi].run.empty()
+                                                    ? "(no runnable found)"
+                                                    : games[gi].run.c_str());
+                                ImGui::SameLine(cw * 0.86f);
+                                if (ImGui::SmallButton("Setup")) {
+                                    selected = gi; page = Page::Settings;
+                                }
+                                ImGui::PopID();
                             }
+                        }
+                        ImGui::EndChild();
+                    }
+                }
 
-                            if (ImGui::Selectable(games[gi].name.c_str(), false, 0,
-                                                  ImVec2(0, ImGui::GetFontSize() * 1.9f)))
-                                launch(games[gi]);
-                            ImGui::SameLine(full.x * 0.55f);
-                            ImGui::TextDisabled("%s", games[gi].run.empty()
-                                                ? "(no runnable found)" : games[gi].run.c_str());
-                            ImGui::SameLine(full.x * 0.86f);
-                            if (ImGui::SmallButton("Setup")) { selected = gi; view = View::Settings; }
+                /* ---- Artwork (and the RetroMedia account) ---- */
+                else if (page == Page::Artwork) {
+                    ImGui::TextUnformatted("Artwork");
+                    ImGui::Separator();
+
+                    if (!media_msg.empty()) {
+                        ImGui::TextWrapped("%s", media_msg.c_str());
+                        ImGui::Separator();
+                    }
+
+                    if (account.signed_in) {
+                        ImGui::Text("Signed in as %s", account.email.c_str());
+                        if (account.is_admin) ImGui::TextUnformatted("Administrator");
+                        else ImGui::TextDisabled("Standard account - artwork only");
+                        ImGui::Text("Credits: %d    Free today: %d",
+                                    account.credits, account.free_remaining);
+                        if (ImGui::Button("Sign out")) {
+                            media_busy = true; retrodos::media_begin_logout();
+                        }
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        ImGui::TextWrapped("Match your library against the DOS catalogue and "
+                                           "fetch box art for every title found.");
+                        ImGui::BeginDisabled(media_busy || games.empty());
+                        if (ImGui::Button("Get artwork for my library")) {
+                            media_busy = true; art_mode = true;
+                            art_total = 1; art_done = 0;
+                            media_msg = "Fetching catalogue...";
+                            retrodos::media_begin_catalogue("", "", false);
+                        }
+                        ImGui::EndDisabled();
+                        if (art_total > 0 && art_done <= art_total)
+                            ImGui::Text("%d / %d", art_done, art_total);
+                        ImGui::Text("Cached: %zu", art.size());
+                    } else {
+                        ImGui::TextWrapped("Sign in to media.crownparkcomputing.com for box "
+                                           "art. Administrators can also download games.");
+                        ImGui::Spacing();
+                        ImGui::SetNextItemWidth(cw * 0.55f);
+                        ImGui::InputText("Email", m_email, sizeof(m_email));
+                        ImGui::SetNextItemWidth(cw * 0.55f);
+                        ImGui::InputText("Password", m_pass, sizeof(m_pass),
+                                         ImGuiInputTextFlags_Password);
+                        ImGui::BeginDisabled(media_busy || !m_email[0] || !m_pass[0]);
+                        if (ImGui::Button("Sign in")) {
+                            media_busy = true; media_msg = "Signing in...";
+                            retrodos::media_begin_login(m_email, m_pass);
+                        }
+                        ImGui::EndDisabled();
+
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        /* An API key suits a shared handheld better: revocable
+                         * from the website, and the only route for an account
+                         * that signs in with Google and has no password. */
+                        ImGui::TextWrapped("Or paste an API key from your account page "
+                                           "(starts with rmk_):");
+                        ImGui::SetNextItemWidth(cw * 0.55f);
+                        ImGui::InputText("API key", m_key, sizeof(m_key),
+                                         ImGuiInputTextFlags_Password);
+                        ImGui::BeginDisabled(media_busy || !m_key[0]);
+                        if (ImGui::Button("Use API key")) {
+                            media_busy = true; media_msg = "Checking key...";
+                            retrodos::media_begin_login_key(m_key);
+                        }
+                        ImGui::EndDisabled();
+                    }
+                }
+
+                /* ---- Downloads (admin) ---- */
+                else if (page == Page::Downloads) {
+                    ImGui::TextUnformatted("Downloads");
+                    ImGui::Separator();
+
+                    if (!media_msg.empty()) {
+                        ImGui::TextWrapped("%s", media_msg.c_str());
+                    }
+                    {   /* A 1 GB title is minutes of otherwise silent work, and a
+                         * screen that looks frozen invites a second press. */
+                        const std::string prog = retrodos::media_progress();
+                        if (!prog.empty()) {
+                            ImGui::TextWrapped("%s", prog.c_str());
+                            float frac = -1.0f;
+                            const size_t pc = prog.rfind('%');
+                            if (pc != std::string::npos && pc > 0) {
+                                const size_t b = prog.rfind('(', pc);
+                                if (b != std::string::npos)
+                                    frac = (float)atof(prog.c_str() + b + 1) / 100.0f;
+                            }
+                            if (frac >= 0.0f && frac <= 1.0f)
+                                ImGui::ProgressBar(frac, ImVec2(cw * 0.6f, 0.0f));
+                            else
+                                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(),
+                                                   ImVec2(cw * 0.6f, 0.0f), "working");
+                        }
+                    }
+                    ImGui::Separator();
+
+                    ImGui::SetNextItemWidth(cw * 0.45f);
+                    ImGui::InputTextWithHint("##csearch", "Search catalogue...",
+                                             cat_search, sizeof(cat_search));
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(media_busy);
+                    if (ImGui::Button("Browse")) {
+                        media_busy = true; art_mode = false;
+                        media_msg = "Loading catalogue...";
+                        const char l[2] = { cat_letter, 0 };
+                        retrodos::media_begin_catalogue(cat_search,
+                                                        cat_letter ? l : "", true);
+                    }
+                    ImGui::EndDisabled();
+
+                    if (ImGui::Button("All")) cat_letter = 0;
+                    for (char c = 'A'; c <= 'Z'; ++c) {
+                        ImGui::SameLine(0.0f, 2.0f);
+                        ImGui::PushID(1000 + c);
+                        const bool on = (cat_letter == c);
+                        if (on) ImGui::PushStyleColor(ImGuiCol_Button,
+                                    ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                        const char lbl[2] = { c, 0 };
+                        if (ImGui::Button(lbl)) cat_letter = on ? 0 : c;
+                        if (on) ImGui::PopStyleColor();
+                        ImGui::PopID();
+                    }
+
+                    ImGui::Text("%zu titles", catalogue.size());
+                    ImGui::BeginChild("##cat");
+                    /* Rows are given room: at arm's length a list packed at text
+                     * height is easy to mis-tap, and a mis-tap here starts a
+                     * download that can run to a gigabyte. */
+                    const float row_h = ImGui::GetFrameHeight() * 1.7f;
+                    ImGuiListClipper clip;
+                    clip.Begin((int)catalogue.size(), row_h);
+                    while (clip.Step()) {
+                        for (int r = clip.DisplayStart; r < clip.DisplayEnd; ++r) {
+                            const retrodos::MediaGame &cg = catalogue[r];
+                            ImGui::PushID(r);
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::TextUnformatted(cg.title.c_str());
+                            ImGui::SameLine(cw * 0.58f);
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::TextDisabled("%.1f MB",
+                                                (double)cg.bytes / (1024.0 * 1024.0));
+                            ImGui::SameLine(cw * 0.78f);
+                            ImGui::BeginDisabled(media_busy || cg.rom_files == 0);
+                            if (ImGui::Button(cg.rom_files ? "Download" : "No files")) {
+                                media_busy = true;
+                                media_msg = "Downloading " + cg.title + "...";
+                                retrodos::media_begin_download(cg.slug, cfg.library_root);
+                            }
+                            ImGui::EndDisabled();
+                            const float used = ImGui::GetFrameHeight();
+                            if (row_h > used) ImGui::Dummy(ImVec2(0.0f, row_h - used));
                             ImGui::PopID();
                         }
                     }
                     ImGui::EndChild();
                 }
-                ImGui::End();
-            }
 
-            /* ---------------- Settings ---------------- */
-            else if (view == View::Settings) {
-                static Settings edit;
-                static int edit_for = -2;
+                /* ---- Machine settings ---- */
+                else if (page == Page::Settings || page == Page::Input) {
+                    static Settings edit;
+                    static int edit_for = -3;
 
-                const bool per_game = (selected >= 0 && selected < (int)games.size());
-                if (edit_for != selected) {
-                    edit = cfg.defaults;
-                    if (per_game) retrodos::load_game_settings(games_dir, games[selected].name, edit);
-                    edit_for = selected;
-                }
+                    const bool per_game = (selected >= 0 && selected < (int)games.size());
+                    if (edit_for != selected) {
+                        edit = cfg.defaults;
+                        if (per_game)
+                            retrodos::load_game_settings(games_dir, games[selected].name, edit);
+                        edit_for = selected;
+                    }
 
-                ImGui::SetNextWindowPos(ImVec2(0, 0));
-                ImGui::SetNextWindowSize(full);
-                ImGui::Begin("##settings", nullptr,
-                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-
-                if (per_game) ImGui::Text("Settings - %s", games[selected].name.c_str());
-                else          ImGui::TextUnformatted("Settings - defaults for all games");
-                ImGui::Separator();
-
-                ImGui::BeginChild("##sset", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.6f));
-                settings_widgets(edit);
-                ImGui::Spacing();
-                ImGui::Separator();
-                controls_widgets(edit);
-                if (per_game) {
-                    ImGui::Spacing();
-                    ImGui::TextDisabled("Saved for this game only; others keep the defaults.");
-                }
-                ImGui::EndChild();
-
-                if (ImGui::Button("Save", ImVec2(0, 0))) {
-                    if (per_game) retrodos::save_game_settings(games_dir, games[selected].name, edit);
-                    else { cfg.defaults = edit; retrodos::save_app_config(cfg_path, cfg); }
-                    edit_for = -2; selected = -1; view = View::Library;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel", ImVec2(0, 0))) {
-                    edit_for = -2; selected = -1; view = View::Library;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Change games folder", ImVec2(0, 0))) {
-                    edit_for = -2; selected = -1;
-                    roots = candidate_roots();
-                    view = View::Wizard;
-                }
-                ImGui::End();
-            }
-
-            /* ---------------- RetroMedia ---------------- */
-            else if (view == View::Media) {
-                ImGui::SetNextWindowPos(ImVec2(0, 0));
-                ImGui::SetNextWindowSize(full);
-                ImGui::Begin("##media", nullptr,
-                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-
-                ImGui::TextUnformatted("RetroMedia");
-                ImGui::SameLine(full.x - 200);
-                if (ImGui::Button("Back", ImVec2(0, 0))) view = View::Library;
-                ImGui::Separator();
-
-                if (!media_msg.empty()) {
-                    ImGui::TextWrapped("%s", media_msg.c_str());
+                    if (per_game) ImGui::Text("%s - %s",
+                                              page == Page::Input ? "Input" : "Machine",
+                                              games[selected].name.c_str());
+                    else ImGui::Text("%s - defaults for all games",
+                                     page == Page::Input ? "Input" : "Machine");
                     ImGui::Separator();
-                }
-                /* A 1 GB title takes minutes; without this the screen looks
-                 * frozen and the obvious reaction is to press Download again. */
-                {
-                    const std::string prog = retrodos::media_progress();
-                    if (!prog.empty()) {
-                        ImGui::TextWrapped("%s", prog.c_str());
-                        /* The bridge reports "... (37%)" when the length is
-                         * known. Pull it back out for a bar: a number moving in
-                         * text is far less legible at arm's length than a bar
-                         * that visibly fills. */
-                        float frac = -1.0f;
-                        const size_t pc = prog.rfind('%');
-                        if (pc != std::string::npos && pc > 0) {
-                            size_t b = prog.rfind('(', pc);
-                            if (b != std::string::npos)
-                                frac = (float)atof(prog.c_str() + b + 1) / 100.0f;
+
+                    ImGui::BeginChild("##sset",
+                                      ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.6f));
+                    if (page == Page::Input) controls_widgets(edit);
+                    else                     settings_widgets(edit);
+                    if (per_game) {
+                        ImGui::Spacing();
+                        ImGui::TextDisabled("Saved for this game only; others keep the "
+                                            "defaults.");
+                    }
+                    ImGui::EndChild();
+
+                    if (ImGui::Button("Save")) {
+                        if (per_game)
+                            retrodos::save_game_settings(games_dir, games[selected].name, edit);
+                        else { cfg.defaults = edit; retrodos::save_app_config(cfg_path, cfg); }
+                        edit_for = -3; selected = -1; page = Page::Library;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel")) {
+                        edit_for = -3; selected = -1; page = Page::Library;
+                    }
+                    if (page == Page::Settings) {
+                        ImGui::SameLine();
+                        if (ImGui::Button("Change games folder")) {
+                            edit_for = -3; selected = -1;
+                            roots = candidate_roots();
+                            view = View::Wizard;
                         }
-                        if (frac >= 0.0f && frac <= 1.0f)
-                            ImGui::ProgressBar(frac, ImVec2(full.x * 0.6f, 0.0f));
-                        else
-                            ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(),
-                                               ImVec2(full.x * 0.6f, 0.0f), "working");
-                        ImGui::Separator();
                     }
                 }
 
-                if (ImGui::BeginTabBar("##mediatabs")) {
+                /* ---- Demo ---- */
+                else if (page == Page::Demo) {
+                    ImGui::TextUnformatted("Demo");
+                    ImGui::Separator();
+                    ImGui::TextWrapped("Bundled with the app, so there is always something "
+                                       "to run even with no games installed.");
+                    ImGui::Spacing();
 
-                    /* ---- Account ---- */
-                    if (ImGui::BeginTabItem("Account")) {
-                        if (account.signed_in) {
-                            ImGui::Text("Signed in as %s", account.email.c_str());
-                            if (account.is_admin) ImGui::TextUnformatted("Administrator");
-                            else ImGui::TextDisabled("Standard account - artwork only");
-                            ImGui::Text("Credits: %d    Free today: %d",
-                                        account.credits, account.free_remaining);
-                            ImGui::Spacing();
-                            if (ImGui::Button("Sign out", ImVec2(0, 0))) {
-                                media_busy = true;
-                                retrodos::media_begin_logout();
-                            }
-                        } else {
-                            ImGui::TextWrapped("Sign in to media.crownparkcomputing.com "
-                                               "for box art. Administrators can also "
-                                               "download games.");
-                            ImGui::Spacing();
-                            ImGui::SetNextItemWidth(full.x * 0.6f);
-                            ImGui::InputText("Email", m_email, sizeof(m_email));
-                            ImGui::SetNextItemWidth(full.x * 0.6f);
-                            ImGui::InputText("Password", m_pass, sizeof(m_pass),
-                                             ImGuiInputTextFlags_Password);
-                            ImGui::BeginDisabled(media_busy || !m_email[0] || !m_pass[0]);
-                            if (ImGui::Button("Sign in", ImVec2(0, 0))) {
-                                media_busy = true; media_msg = "Signing in...";
-                                retrodos::media_begin_login(m_email, m_pass);
-                            }
-                            ImGui::EndDisabled();
-
-                            ImGui::Spacing();
-                            ImGui::Separator();
-                            /* An API key is the better credential on a handheld
-                             * that may be shared: it can be revoked from the
-                             * website without changing a password, and nothing
-                             * reusable elsewhere is stored on the device. It is
-                             * also the only route for an account that signs in
-                             * with Google and so has no password to type. */
-                            ImGui::TextWrapped("Or paste an API key from your account "
-                                               "page (starts with rmk_):");
-                            ImGui::SetNextItemWidth(full.x * 0.6f);
-                            ImGui::InputText("API key", m_key, sizeof(m_key),
-                                             ImGuiInputTextFlags_Password);
-                            ImGui::BeginDisabled(media_busy || !m_key[0]);
-                            if (ImGui::Button("Use API key", ImVec2(0, 0))) {
-                                media_busy = true; media_msg = "Checking key...";
-                                retrodos::media_begin_login_key(m_key);
-                            }
-                            ImGui::EndDisabled();
+                    if (!retrodos::demo_prepare(demo_dir)) {
+                        ImGui::TextDisabled("The bundled content could not be unpacked.");
+                    } else {
+                        const retrodos::DemoKind kinds[] = { retrodos::DemoKind::Demo,
+                                                             retrodos::DemoKind::FreeDos };
+                        for (retrodos::DemoKind k : kinds) {
+                            Game g;
+                            g.name    = retrodos::demo_title(k);
+                            g.dir     = demo_dir;
+                            g.run     = retrodos::demo_command(k, g.run_raw);
+                            g.is_demo = true;
+                            ImGui::PushID(g.name.c_str());
+                            if (ImGui::Button(g.name.c_str(), ImVec2(cw * 0.9f, 0)))
+                                launch(g);
+                            ImGui::PopID();
                         }
-                        ImGui::EndTabItem();
+                        ImGui::Spacing();
+                        ImGui::TextDisabled("FreeDOS 1.3 is included verbatim under the GPL;\n"
+                                            "the demonstration program was written for this\n"
+                                            "project. See demo/NOTICE.md.");
                     }
-
-                    /* ---- Artwork ---- */
-                    if (ImGui::BeginTabItem("Artwork")) {
-                        if (!account.signed_in) {
-                            ImGui::TextWrapped("Sign in on the Account tab first.");
-                        } else {
-                            ImGui::TextWrapped("Match your library against the DOS "
-                                               "catalogue and fetch box art for every "
-                                               "title that is found.");
-                            ImGui::Spacing();
-                            ImGui::BeginDisabled(media_busy || games.empty());
-                            if (ImGui::Button("Get artwork for my library", ImVec2(0, 0))) {
-                                media_busy = true;
-                                art_mode   = true;
-                                art_total  = 1;   /* non-zero until the real count lands */
-                                art_done   = 0;
-                                media_msg  = "Fetching catalogue...";
-                                retrodos::media_begin_catalogue("", "", false);
-                            }
-                            ImGui::EndDisabled();
-
-                            if (art_total > 0 && art_done <= art_total)
-                                ImGui::Text("%d / %d", art_done, art_total);
-                            ImGui::Text("Cached: %zu", art.size());
-                        }
-                        ImGui::EndTabItem();
-                    }
-
-                    /* ---- Downloads (admin) ---- */
-                    if (ImGui::BeginTabItem("Downloads")) {
-                        if (!account.signed_in) {
-                            ImGui::TextWrapped("Sign in on the Account tab first.");
-                        } else if (!account.is_admin) {
-                            /* Stated plainly rather than hidden: the server
-                             * enforces this too, so a disabled button here is
-                             * describing a real rule, not inventing one. */
-                            ImGui::TextWrapped("Downloading games requires a RetroMedia "
-                                               "administrator account. Artwork is "
-                                               "available on any account.");
-                        } else {
-                            ImGui::SetNextItemWidth(full.x * 0.45f);
-                            ImGui::InputTextWithHint("##csearch", "Search catalogue...",
-                                                     cat_search, sizeof(cat_search));
-                            ImGui::SameLine();
-                            ImGui::BeginDisabled(media_busy);
-                            if (ImGui::Button("Browse", ImVec2(0, 0))) {
-                                media_busy = true;
-                                art_mode   = false;
-                                media_msg  = "Loading catalogue...";
-                                const char l[2] = { cat_letter, 0 };
-                                retrodos::media_begin_catalogue(cat_search,
-                                                                cat_letter ? l : "", true);
-                            }
-                            ImGui::EndDisabled();
-
-                            if (ImGui::Button("All")) cat_letter = 0;
-                            for (char c = 'A'; c <= 'Z'; ++c) {
-                                ImGui::SameLine(0.0f, 2.0f);
-                                ImGui::PushID(1000 + c);
-                                const bool on = (cat_letter == c);
-                                if (on) ImGui::PushStyleColor(ImGuiCol_Button,
-                                            ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-                                const char lbl[2] = { c, 0 };
-                                if (ImGui::Button(lbl)) cat_letter = on ? 0 : c;
-                                if (on) ImGui::PopStyleColor();
-                                ImGui::PopID();
-                            }
-
-                            ImGui::Text("%zu titles", catalogue.size());
-                            ImGui::BeginChild("##cat");
-
-                            /* Rows are given room to breathe: at arm's length on
-                             * a handheld, a list packed at text height is both
-                             * hard to read and easy to mis-tap -- and a mis-tap
-                             * here starts a download that can run to a gigabyte.
-                             * The clipper is told the height explicitly so its
-                             * scroll maths matches what is actually drawn. */
-                            const float row_h = ImGui::GetFrameHeight() * 1.7f;
-
-                            ImGuiListClipper clip;
-                            clip.Begin((int)catalogue.size(), row_h);
-                            while (clip.Step()) {
-                                for (int r = clip.DisplayStart; r < clip.DisplayEnd; ++r) {
-                                    const retrodos::MediaGame &cg = catalogue[r];
-                                    ImGui::PushID(r);
-
-                                    ImGui::AlignTextToFramePadding();
-                                    ImGui::TextUnformatted(cg.title.c_str());
-                                    ImGui::SameLine(full.x * 0.6f);
-                                    ImGui::AlignTextToFramePadding();
-                                    ImGui::TextDisabled("%.1f MB",
-                                                        (double)cg.bytes / (1024.0 * 1024.0));
-                                    ImGui::SameLine(full.x * 0.8f);
-                                    ImGui::BeginDisabled(media_busy || cg.rom_files == 0);
-                                    if (ImGui::Button(cg.rom_files ? "Download"
-                                                                   : "No files")) {
-                                        media_busy = true;
-                                        media_msg  = "Downloading " + cg.title + "...";
-                                        /* Straight into the library root, so the
-                                         * title appears where the scanner already
-                                         * looks. */
-                                        retrodos::media_begin_download(cg.slug,
-                                                                       cfg.library_root);
-                                    }
-                                    ImGui::EndDisabled();
-
-                                    /* Pad the row out to row_h so every entry
-                                     * occupies exactly what the clipper assumed. */
-                                    const float used = ImGui::GetFrameHeight();
-                                    if (row_h > used) ImGui::Dummy(ImVec2(0.0f, row_h - used));
-                                    ImGui::PopID();
-                                }
-                            }
-                            ImGui::EndChild();
-                        }
-                        ImGui::EndTabItem();
-                    }
-                    ImGui::EndTabBar();
                 }
+
+                /* ---- About ---- */
+                else if (page == Page::About) {
+                    ImGui::TextUnformatted("About");
+                    ImGui::Separator();
+                    ImGui::TextWrapped("Retro-DOS");
+                    ImGui::TextDisabled("DOSBox-X core on SDL3, with a Dear ImGui frontend.");
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("Games are mounted as folders, so each title runs from "
+                                       "its own directory. Where a game ships its own "
+                                       "dosbox.conf, its [autoexec] and sound settings are "
+                                       "used as-is rather than guessed at.");
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("Library: %s", library_label(cfg.library_root).c_str());
+                    ImGui::TextWrapped("Games installed: %zu", games.size());
+                    if (account.signed_in)
+                        ImGui::TextWrapped("RetroMedia: %s%s", account.email.c_str(),
+                                           account.is_admin ? " (administrator)" : "");
+                }
+
+                ImGui::EndChild();
                 ImGui::End();
             }
 
