@@ -68,6 +68,7 @@ struct Game {
     bool        from_saf = false;
     bool        run_raw  = false;  /* emit `run` unquoted (a DOSBox-X command) */
     std::string autoexec;          /* [autoexec] from the game's own dosbox.conf */
+    std::string audio_profile;     /* its sound sections, verbatim */
     bool        is_demo  = false;  /* bundled content: never staged, never scanned */
     std::string slug;              /* RetroMedia catalogue slug, when matched */
 };
@@ -121,6 +122,57 @@ std::string canon(const std::string &s)
  * they assume the launcher has already mounted the game folder there, which is
  * exactly what build_conf does.
  */
+std::string read_conf_section(const std::string &text, const char *section)
+{
+    const size_t start = text.find(section);
+    if (start == std::string::npos) return std::string();
+
+    std::string out;
+    size_t i = text.find('\n', start);
+    while (i != std::string::npos && i + 1 <= text.size()) {
+        size_t e = text.find('\n', ++i);
+        std::string line = text.substr(i, (e == std::string::npos ? text.size() : e) - i);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (!line.empty() && line[0] == '[') break;
+        if (!line.empty() && line[0] != '#') out += line + "\n";
+        if (e == std::string::npos) break;
+        i = e;
+    }
+    return out;
+}
+
+/**
+ * The sound settings a game ships with.
+ *
+ * These packs tune the sound card per title -- Descent asks for sb16 at
+ * 220/7/1 with OPL3 and a 49716Hz mixer, which is what the game was configured
+ * against when it was packaged. Overriding all of that with one global default
+ * is what leaves a game silent: the guest is driving hardware at an address the
+ * emulator did not put a card on.
+ *
+ * Only the audio sections are taken. Video and CPU stay under our control,
+ * because those interact with the framebuffer tap and with settings the user
+ * can see and change.
+ */
+std::string bundled_audio_profile(const std::string &dir)
+{
+    const std::string path = dir + "/dosbox.conf";
+    size_t len = 0;
+    void *data = SDL_LoadFile(path.c_str(), &len);
+    if (!data) return std::string();
+    const std::string text((const char *)data, len);
+    SDL_free(data);
+
+    static const char *kSections[] = { "[sblaster]", "[mixer]", "[midi]",
+                                       "[speaker]", "[gus]" };
+    std::string out;
+    for (const char *s : kSections) {
+        const std::string body = read_conf_section(text, s);
+        if (!body.empty()) { out += s; out += "\n"; out += body; }
+    }
+    return out;
+}
+
 std::string bundled_autoexec(const std::string &dir)
 {
     const std::string path = dir + "/dosbox.conf";
@@ -181,7 +233,8 @@ void find_runnable(const std::string &dir, Game &g)
 {
     /* A conf shipped with the game wins over anything guessed from the
      * directory listing. */
-    g.autoexec = bundled_autoexec(dir);
+    g.autoexec      = bundled_autoexec(dir);
+    g.audio_profile = bundled_audio_profile(dir);
     if (!g.autoexec.empty()) {
         g.run = "game profile";     /* label only; the conf drives the launch */
         return;
@@ -191,7 +244,8 @@ void find_runnable(const std::string &dir, Game &g)
     char **files = SDL_GlobDirectory(dir.c_str(), NULL, SDL_GLOB_CASEINSENSITIVE, &n);
     if (!files) return;
 
-    std::string bat, com, exe, fallback_bat;
+    std::string bat, com, exe;
+    std::string fallback_bat, fallback_com, fallback_exe;
     for (int i = 0; i < n; ++i) {
         const std::string f = files[i];
         /* This glob recurses too. A nested hit is useless here: the name goes
@@ -206,12 +260,23 @@ void find_runnable(const std::string &dir, Game &g)
             if (is_support_script(f)) { if (fallback_bat.empty()) fallback_bat = f; }
             else if (bat.empty() || preferred) { if (preferred || bat.empty()) bat = f; }
         }
-        else if (com.empty() && ends_with_ci(f, ".com")) com = f;
-        else if (exe.empty() && ends_with_ci(f, ".exe") && !is_support_script(f)) exe = f;
+        else if (ends_with_ci(f, ".com")) {
+            if (is_support_script(f)) { if (fallback_com.empty()) fallback_com = f; }
+            else if (com.empty()) com = f;
+        }
+        else if (ends_with_ci(f, ".exe")) {
+            if (is_support_script(f)) { if (fallback_exe.empty()) fallback_exe = f; }
+            else if (exe.empty()) exe = f;
+        }
     }
     SDL_free(files);
 
+    /* A setup or install program is a last resort, not a first choice -- but it
+     * IS a resort. Some titles ship nothing else, and refusing to offer the one
+     * executable present leaves the game unstartable. */
     if (bat.empty()) bat = fallback_bat;
+    if (com.empty()) com = fallback_com;
+    if (exe.empty()) exe = fallback_exe;
     g.run = !bat.empty() ? bat : (!com.empty() ? com : exe);
 }
 
@@ -636,6 +701,15 @@ int main(int argc, char **argv)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;   /* our own config owns durable state */
+
+    /* Input trickling is left ON deliberately.
+     *
+     * Turning it off looks like the fix for a touchscreen -- apply the tap's
+     * position and its press in one frame -- but it is the opposite: a tap
+     * delivers move, down and up in a single batch, and without trickling all
+     * three are applied to the same frame, so the button is never observed
+     * down and the press is lost entirely. Trickling is what spreads them over
+     * consecutive frames and makes a quick tap register at all. */
     ImGui::StyleColorsDark();
     ImGui_ImplSDL3_InitForSDLRenderer(win, ren);
     ImGui_ImplSDLRenderer3_Init(ren);
@@ -880,7 +954,8 @@ int main(int argc, char **argv)
         const std::string conf = retrodos::build_conf(
             s, g.name, g.dir,
             use_profile ? g.autoexec : g.run,
-            use_profile ? true : g.run_raw);
+            use_profile ? true : g.run_raw,
+            g.audio_profile);
         if (SDL_IOStream *io = SDL_IOFromFile(conf_path.c_str(), "w")) {
             SDL_WriteIO(io, conf.data(), conf.size());
             SDL_CloseIO(io);

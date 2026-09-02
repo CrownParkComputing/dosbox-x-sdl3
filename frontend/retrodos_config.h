@@ -105,9 +105,14 @@ bool save_game_settings(const std::string &dir, const std::string &game, const S
  * because DOS titles routinely contain spaces, but a built-in DOSBox-X command
  * that takes an argument -- "boot FREEDOS.IMG" -- would then be read as the
  * name of a program to find, and fail. */
+/* extra_sections is conf text appended AFTER our own settings and before
+ * [autoexec]. It carries the sound configuration a game ships with, which is
+ * what that title was actually packaged against; a later key wins, so those
+ * values override our defaults for that game only. */
 std::string build_conf(const Settings &s, const std::string &title,
                        const std::string &mount_dir, const std::string &run_cmd,
-                       bool run_raw = false);
+                       bool run_raw = false,
+                       const std::string &extra_sections = std::string());
 
 } /* namespace retrodos */
 

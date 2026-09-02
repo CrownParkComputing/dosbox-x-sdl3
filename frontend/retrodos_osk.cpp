@@ -22,10 +22,10 @@
 namespace retrodos {
 namespace {
 
-/* Share of screen height the keyboard may take. A third leaves the DOS
- * picture legible above it, which is the point of a keyboard you only
- * raise when you need it. */
-const float kHeightShare = 0.34f;
+/* Share of screen height the keyboard may take. It spans the full width, so
+ * this only decides how tall the keys are -- enough for a comfortable target
+ * while still leaving most of the DOS picture visible above it. */
+const float kHeightShare = 0.42f;
 
 struct Key {
     const char *label;
@@ -107,7 +107,7 @@ void tap(int scancode)
     if (g_ctrl)  { retrodos_host_send_key(SDL_SCANCODE_LCTRL,  false); g_ctrl  = false; }
 }
 
-void draw_row(const Key *keys, int count, float unit, float gap)
+void draw_row(const Key *keys, int count, float unit_w, float unit_h, float gap)
 {
     for (int i = 0; i < count; ++i) {
         if (i) ImGui::SameLine(0.0f, gap);
@@ -123,7 +123,15 @@ void draw_row(const Key *keys, int count, float unit, float gap)
                                   ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
 
         ImGui::PushID(k.scancode * 131 + i);
-        if (ImGui::Button(k.label, ImVec2(unit * k.width, unit))) {
+        ImGui::Button(k.label, ImVec2(unit_w * k.width, unit_h));
+
+        /* Fires on PRESS, not on release over the same key.
+         *
+         * A real key acts the moment it goes down, and a thumb that lands on a
+         * key and slides slightly off before lifting still means to have
+         * pressed it -- with release-based activation that input is simply
+         * lost, which on a touchscreen happens constantly. */
+        if (ImGui::IsItemActivated()) {
             if (is_modifier(k.scancode)) {
                 /* Sticky: latch for the NEXT key rather than requiring two
                  * fingers, which a handheld cannot offer. */
@@ -144,23 +152,26 @@ void draw_row(const Key *keys, int count, float unit, float gap)
 
 void osk_draw(float screen_w, float screen_h)
 {
-    /* Sized from a HEIGHT budget, not from the screen width.
+    /* Keys are RECTANGLES, not squares.
      *
-     * The layout is ~14.5 keys wide by 6 tall, so a full-width keyboard is
-     * automatically ~74% of a 16:9 screen tall -- it swallows the game. What
-     * matters on a handheld is how much of the picture survives, so pick the
-     * key size from the share of height the keyboard may occupy and let it be
-     * narrower than the screen. Also clamp against width so an unusually tall
-     * window cannot make the keys absurd. */
-    const float gap     = ImGui::GetStyle().ItemSpacing.x * 0.4f;
-    const float pad     = ImGui::GetStyle().WindowPadding.y;
-    const float budget  = screen_h * kHeightShare;
-    const float by_h    = (budget - gap * 5.0f - pad * 2.0f) / 6.0f;
-    const float by_w    = (screen_w * 0.98f - gap * 14.0f) / 14.5f;
-    const float unit    = SDL_min(by_h, by_w);
+     * Sizing everything from one unit forces a choice between a keyboard that
+     * spans the screen and one that leaves the game visible: the layout is
+     * ~14.5 wide by 6 tall, so a full-width board on 16:9 is about 70% of the
+     * height, and shrinking it to fit a height budget leaves it under half the
+     * screen wide -- a cramped island with a lot of empty space beside it.
+     *
+     * Real keyboards are not square-keyed either. Taking WIDTH from the screen
+     * width and HEIGHT from a separate budget gives a board that spans the
+     * display, stays about two fifths of its height, and has comfortably large
+     * targets. */
+    const float gap  = ImGui::GetStyle().ItemSpacing.x * 0.4f;
+    const float pad  = ImGui::GetStyle().WindowPadding.y;
 
-    const float kb_w = unit * 14.5f + gap * 14.0f + pad * 2.0f;
-    const float kb_h = unit * 6.0f  + gap * 5.0f  + pad * 2.0f;
+    const float unit_w = (screen_w * 0.985f - gap * 14.0f - pad * 2.0f) / 14.5f;
+    const float unit_h = (screen_h * kHeightShare - gap * 5.0f - pad * 2.0f) / 6.0f;
+
+    const float kb_w = unit_w * 14.5f + gap * 14.0f + pad * 2.0f;
+    const float kb_h = unit_h * 6.0f  + gap * 5.0f  + pad * 2.0f;
 
     ImGui::SetNextWindowPos(ImVec2(screen_w * 0.5f, screen_h - pad), ImGuiCond_Always,
                             ImVec2(0.5f, 1.0f));
@@ -171,12 +182,12 @@ void osk_draw(float screen_w, float screen_h)
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
                  ImGuiWindowFlags_NoNav);
 
-    draw_row(kRow0, SDL_arraysize(kRow0), unit, gap);
-    draw_row(kRow1, SDL_arraysize(kRow1), unit, gap);
-    draw_row(kRow2, SDL_arraysize(kRow2), unit, gap);
-    draw_row(kRow3, SDL_arraysize(kRow3), unit, gap);
-    draw_row(kRow4, SDL_arraysize(kRow4), unit, gap);
-    draw_row(kRow5, SDL_arraysize(kRow5), unit, gap);
+    draw_row(kRow0, SDL_arraysize(kRow0), unit_w, unit_h, gap);
+    draw_row(kRow1, SDL_arraysize(kRow1), unit_w, unit_h, gap);
+    draw_row(kRow2, SDL_arraysize(kRow2), unit_w, unit_h, gap);
+    draw_row(kRow3, SDL_arraysize(kRow3), unit_w, unit_h, gap);
+    draw_row(kRow4, SDL_arraysize(kRow4), unit_w, unit_h, gap);
+    draw_row(kRow5, SDL_arraysize(kRow5), unit_w, unit_h, gap);
 
     ImGui::End();
 }

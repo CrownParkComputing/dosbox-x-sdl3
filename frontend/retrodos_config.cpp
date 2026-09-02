@@ -187,7 +187,7 @@ bool save_game_settings(const std::string &dir, const std::string &game, const S
 
 std::string build_conf(const Settings &s, const std::string &title,
                        const std::string &mount_dir, const std::string &run_cmd,
-                       bool run_raw)
+                       bool run_raw, const std::string &extra_sections)
 {
     std::string c;
 
@@ -227,6 +227,9 @@ std::string build_conf(const Settings &s, const std::string &title,
     c += std::string("joysticktype=") + (s.pad_sends_joystick ? "2axis" : "none") + "\n";
     c += "timed=false\n";   /* untimed axes are what a synthesised stick wants */
     c += "autofire=false\n";
+
+    /* Whatever the game shipped, last, so it wins over the defaults above. */
+    if (!extra_sections.empty()) c += extra_sections;
 
     c += "[autoexec]\n";
     c += "mount C \"" + mount_dir + "\"\n";
