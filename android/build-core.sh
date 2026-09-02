@@ -172,7 +172,7 @@ FE_OBJS=""
 FE_FLAGS="-fPIC -O2 -g0 -DANDROID -std=gnu++17
           -I$ROOT/include -I$ROOT/frontend/imgui
           -I$SDL3_PREFIX/include"
-for src in "$ROOT"/frontend/retrodos_frontend.cpp "$ROOT"/frontend/imgui/*.cpp; do
+for src in "$ROOT"/frontend/*.cpp "$ROOT"/frontend/imgui/*.cpp; do
     obj="$FE_OUT/$(basename "${src%.cpp}").o"
     # shellcheck disable=SC2086
     "$CXX" $FE_FLAGS -c -o "$obj" "$src" || {
