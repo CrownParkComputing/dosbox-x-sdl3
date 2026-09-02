@@ -61,7 +61,10 @@ int set_tty(int fd) {
 		return -1;
 	}
 
-#ifdef __APPLE__
+/* IOSSIOSPEED comes from <IOKit/serial/ioss.h>, which is macOS-only -- see the
+   matching guard in POSIX_SerialPort.h. iOS has no serial ports to set a
+   custom baud rate on. TARGET_OS_IPHONE reaches here via that header. */
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
 	int speed = 2000000;
 
 	if (ioctl(fd, IOSSIOSPEED, &speed) == -1) {

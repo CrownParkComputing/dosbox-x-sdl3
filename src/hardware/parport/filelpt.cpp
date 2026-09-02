@@ -173,7 +173,11 @@ void CFileLPT::doAction() {
         }
         fail=(INT_PTR)ShellExecute(NULL, "open", action.c_str(), para.c_str(), NULL, shellhide?SW_HIDE:SW_NORMAL)<=32;
 #else
-        fail=system((action+" "+name).c_str())!=0;
+        #if defined(IPHONEOS)
+            fail=true;   /* no shell on iOS */
+#else
+            fail=system((action+" "+name).c_str())!=0;
+#endif
 #endif
         if (action4.size()&&fail) {
             action=action4;
@@ -194,7 +198,11 @@ void CFileLPT::doAction() {
             }
             fail=(INT_PTR)ShellExecute(NULL, "open", action.c_str(), para.c_str(), NULL, shellhide?SW_HIDE:SW_NORMAL)<=32;
 #else
+            #if defined(IPHONEOS)
+            fail=true;   /* no shell on iOS */
+#else
             fail=system((action+" "+name).c_str())!=0;
+#endif
 #endif
         }
         if (filetype==FILE_CAPTURE) name="";

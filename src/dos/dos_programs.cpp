@@ -9845,7 +9845,7 @@ public:
         }
         cmd=trim((char *)TranslateHostPath(cmd));
         int ret=0;
-#if defined(LINUX) || defined(MACOSX)
+#if (defined(LINUX) || defined(MACOSX)) && !defined(IPHONEOS)
         ret=system(((open?
 #if defined(LINUX)
         "xdg-open "

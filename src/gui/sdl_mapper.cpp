@@ -68,7 +68,7 @@
 
 #include <output/output_ttf.h>
 
-#if defined(MACOSX)
+#if defined(MACOSX) && !defined(IPHONEOS)
 #include <Carbon/Carbon.h> 
 #endif
 

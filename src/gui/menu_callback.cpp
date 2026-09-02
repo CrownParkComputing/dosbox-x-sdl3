@@ -3160,7 +3160,7 @@ bool help_open_url_callback(DOSBoxMenu * const menu, DOSBoxMenu::item * const me
 #elif defined(LINUX)
       int ret = system(("xdg-open "+url).c_str());
       return WIFEXITED(ret) && WEXITSTATUS(ret);
-#elif defined(MACOSX)
+#elif defined(MACOSX) && !defined(IPHONEOS)
       int ret = system(("open "+url).c_str());
       return WIFEXITED(ret) && WEXITSTATUS(ret);
 #endif

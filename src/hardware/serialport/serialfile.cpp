@@ -88,7 +88,11 @@ void CSerialFile::doAction() {
         }
         fail=(INT_PTR)ShellExecute(NULL, "open", action.c_str(), para.c_str(), NULL, shellhide?SW_HIDE:SW_NORMAL)<=32;
 #else
-        fail=system((action+" "+filename).c_str())!=0;
+        #if defined(IPHONEOS)
+            fail=true;   /* no shell on iOS */
+#else
+            fail=system((action+" "+filename).c_str())!=0;
+#endif
 #endif
         if (acterr.size()&&fail) {
             action=acterr;
@@ -109,7 +113,11 @@ void CSerialFile::doAction() {
             }
             fail=(INT_PTR)ShellExecute(NULL, "open", action.c_str(), para.c_str(), NULL, shellhide?SW_HIDE:SW_NORMAL)<=32;
 #else
+            #if defined(IPHONEOS)
+            fail=true;   /* no shell on iOS */
+#else
             fail=system((action+" "+filename).c_str())!=0;
+#endif
 #endif
         }
         bool systemmessagebox(char const * aTitle, char const * aMessage, char const * aDialogType, char const * aIconType, int aDefaultButton);

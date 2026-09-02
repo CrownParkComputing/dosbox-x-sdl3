@@ -98,6 +98,37 @@ static inline bool retrodosbox_sdl3_show_cursor(int on) {
 }
 #define SDL_ShowCursor(x) retrodosbox_sdl3_show_cursor(x)
 
+/* SDL2: text input was GLOBAL -- SDL_StartTextInput(void),
+ *       SDL_StopTextInput(void), SDL_SetTextInputRect(const SDL_Rect*).
+ * SDL3: all three are per-window, and SDL_SetTextInputRect is gone entirely,
+ *       replaced by SDL_SetTextInputArea(window, rect, cursor).
+ *
+ * There is no global form to rename to, which is why SDL_oldnames.h does not
+ * cover these. SDL_GetKeyboardFocus() is the honest equivalent of "the window
+ * SDL2 would have meant": the one currently taking keyboard input.
+ *
+ * These only surface on a build that defines MACOSX, because the call sites
+ * sit behind `(defined(WIN32) || defined(MACOSX)) && defined(C_SDL2)` -- so an
+ * iOS build hits them and Android never does.
+ *
+ * Each helper is defined BEFORE its macro, so the body calls the real SDL3
+ * function rather than expanding into itself. */
+static inline bool retrodosbox_sdl3_start_text_input(void) {
+    return SDL_StartTextInput(SDL_GetKeyboardFocus());
+}
+#define SDL_StartTextInput() retrodosbox_sdl3_start_text_input()
+
+static inline bool retrodosbox_sdl3_stop_text_input(void) {
+    return SDL_StopTextInput(SDL_GetKeyboardFocus());
+}
+#define SDL_StopTextInput() retrodosbox_sdl3_stop_text_input()
+
+/* cursor 0: the tree sets only the rectangle, never a cursor offset within it. */
+static inline bool retrodosbox_sdl3_set_text_input_rect(const SDL_Rect *r) {
+    return SDL_SetTextInputArea(SDL_GetKeyboardFocus(), r, 0);
+}
+#define SDL_SetTextInputRect(r) retrodosbox_sdl3_set_text_input_rect(r)
+
 /* SDL2: one SDL_WINDOWEVENT type, with the specific event in
  *       event.window.event.
  * SDL3: each window event is its OWN top-level type (SDL_EVENT_WINDOW_*), and

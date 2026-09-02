@@ -225,7 +225,11 @@ void RebootConfig(std::string filename, bool confirm=false) {
         RESULTCODES result;
         DosExecPgm(LoadError, sizeof(LoadError), EXEC_ASYNC, (PSZ)para.c_str(), NULL, &result, (PSZ)exepath.c_str());
 #else
+#if defined(IPHONEOS)
+        /* No shell, and no spawning another process, on iOS. */
+#else
         system((exepath+" "+para+ " &").c_str());
+#endif
 #endif
         throw(0);
     }
@@ -247,7 +251,11 @@ void RebootLanguage(std::string filename, bool confirm=false) {
         RESULTCODES result;
         DosExecPgm(LoadError, sizeof(LoadError), EXEC_ASYNC, (PSZ)para.c_str(), NULL, &result, (PSZ)exepath.c_str());
 #else
+#if defined(IPHONEOS)
+        /* No shell, and no spawning another process, on iOS. */
+#else
         system((exepath+" "+para+ " &").c_str());
+#endif
 #endif
         throw(0);
     }
@@ -3635,7 +3643,7 @@ public:
             }
 #elif defined(LINUX)
             system(("xdg-open "+url).c_str());
-#elif defined(MACOSX)
+#elif defined(MACOSX) && !defined(IPHONEOS)
             system(("open "+url).c_str());
 #endif
         } else if (arg == tmp1) {

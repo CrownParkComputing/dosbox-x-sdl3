@@ -38,7 +38,7 @@
 #elif defined(LINUX)
 #define SDL_CDROM_LINUX
 #include "../../vs/sdl/src/cdrom/linux/SDL_syscdrom.c"
-#elif defined(MACOSX)
+#elif defined(MACOSX) && !defined(IPHONEOS)
 #define SDL_CDROM_MACOSX
 #include "../../vs/sdl/src/cdrom/macosx/SDL_syscdrom.c"
 #include "../../vs/sdl/src/cdrom/macosx/AudioFilePlayer.c"

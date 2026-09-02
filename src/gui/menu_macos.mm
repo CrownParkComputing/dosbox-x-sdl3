@@ -9,7 +9,7 @@
 #include "SDL_version.h"
 #include "SDL_syswm.h"
 
-#if defined(MACOSX)
+#if defined(MACOSX) && !defined(IPHONEOS)
 # include <MacTypes.h>
 # include <Cocoa/Cocoa.h>
 # include <Carbon/Carbon.h>

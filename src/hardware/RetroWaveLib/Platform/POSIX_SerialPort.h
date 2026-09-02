@@ -35,7 +35,10 @@
 #include <sys/file.h>
 
 #ifdef __APPLE__
+#include <TargetConditionals.h>
+#if !TARGET_OS_IPHONE
 #include <IOKit/serial/ioss.h>
+#endif
 #endif
 
 #include "../RetroWave.h"

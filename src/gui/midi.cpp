@@ -110,7 +110,13 @@ static struct {
 #if defined(MACOSX)
 
 #include "midi_coremidi.h"
+/* CoreMIDI exists on iOS; the CoreAudio MIDI handler does not. It wants
+   kAudioUnitSubType_DefaultOutput, kAudioUnitSubType_DLSSynth and
+   kMusicDeviceParam_Volume, none of which are in the iOS AudioUnit set.
+   The header self-registers, so dropping the include drops the handler. */
+#if !defined(IPHONEOS)
 #include "midi_coreaudio.h"
+#endif
 
 #elif defined (WIN32)
 
