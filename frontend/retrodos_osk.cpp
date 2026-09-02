@@ -18,6 +18,12 @@
 #include "retrodos_host.h"
 
 #include <SDL3/SDL.h>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define OSKLOG(...) __android_log_print(ANDROID_LOG_INFO, "retrodos", __VA_ARGS__)
+#else
+#define OSKLOG(...) SDL_Log(__VA_ARGS__)
+#endif
 
 namespace retrodos {
 namespace {
@@ -127,6 +133,7 @@ void tap(int scancode)
     if (g_alt)   retrodos_host_send_key(SDL_SCANCODE_LALT,   true);
     if (g_shift) retrodos_host_send_key(SDL_SCANCODE_LSHIFT, true);
 
+    OSKLOG("osk: tap scancode=%d", scancode);
     retrodos_host_send_key(scancode, true);
 
     g_pending.scancode   = scancode;
@@ -154,6 +161,12 @@ void draw_row(const Key *keys, int count, float unit_w, float unit_h, float gap)
 
         ImGui::PushID(k.scancode * 131 + i);
         ImGui::Button(k.label, ImVec2(unit_w * k.width, unit_h));
+        if (k.scancode == SDL_SCANCODE_1 && ImGui::GetIO().MouseDown[0]) {
+            const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+            OSKLOG("osk: key'1' rect %.0f,%.0f - %.0f,%.0f  mouse %.0f,%.0f",
+                   a.x, a.y, b.x, b.y,
+                   ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y);
+        }
 
         /* Fires on PRESS, not on release over the same key.
          *

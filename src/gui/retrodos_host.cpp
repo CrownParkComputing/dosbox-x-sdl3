@@ -42,6 +42,9 @@
 #include <cstring>
 
 #include "SDL.h"
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 
 #include "dosbox.h"
 #include "video.h"
@@ -105,6 +108,9 @@ void queue(const Request &r)
 
 void inject_key(int scancode, bool pressed)
 {
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "retrodos", "inject_key sc=%d down=%d", scancode, (int)pressed);
+#endif
     SDL_Event ev;
     SDL_memset(&ev, 0, sizeof(ev));
     ev.key.type     = pressed ? SDL_KEYDOWN : SDL_KEYUP;

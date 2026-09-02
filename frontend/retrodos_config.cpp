@@ -79,7 +79,7 @@ void append_settings(std::string &s, const Settings &v)
     /* One line, so a per-game override file stays readable and a hand edit is
      * a single change rather than twelve. */
     s += "pad_keys=";
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < 14; ++i) {
         if (i) s += ",";
         s += std::to_string(v.pad_keys[i]);
     }
@@ -103,7 +103,7 @@ void read_settings(const std::map<std::string, std::string> &kv, Settings &v)
     if (!keys.empty()) {
         int n = 0;
         size_t i = 0;
-        while (i <= keys.size() && n < 12) {
+        while (i <= keys.size() && n < 14) {
             size_t e = keys.find(',', i);
             if (e == std::string::npos) e = keys.size();
             v.pad_keys[n++] = atoi(keys.substr(i, e - i).c_str());
@@ -143,8 +143,37 @@ void default_pad_keys(int *k)
     k[7]  = SDL_SCANCODE_LSHIFT;   /* Y */
     k[8]  = SDL_SCANCODE_PAGEUP;   /* L */
     k[9]  = SDL_SCANCODE_PAGEDOWN; /* R */
-    k[10] = SDL_SCANCODE_RETURN;   /* Start  */
-    k[11] = SDL_SCANCODE_ESCAPE;   /* Select */
+    k[10] = 0;                     /* LT -- unused by a generic DOS game */
+    k[11] = 0;                     /* RT */
+    k[12] = SDL_SCANCODE_RETURN;   /* Start  */
+    k[13] = SDL_SCANCODE_ESCAPE;   /* Select */
+}
+
+void descent_pad_keys(int *k)
+{
+    /* Descent flies in six degrees of freedom, which is exactly why a d-pad
+     * plus two buttons cannot hold it: turning, pitching, banking, sliding,
+     * throttle and two weapons all want to be live at once. Laid out the way a
+     * modern pad would do it -- aim on the stick, weapons on the triggers,
+     * throttle on the face buttons, roll on the shoulders.
+     *
+     * These are Descent's DEFAULT keyboard bindings. If a game has been
+     * reconfigured in its own setup, change these to match rather than the
+     * other way round. */
+    k[0]  = SDL_SCANCODE_UP;       /* pitch down  (nose up on the stick) */
+    k[1]  = SDL_SCANCODE_DOWN;     /* pitch up    */
+    k[2]  = SDL_SCANCODE_LEFT;     /* turn left   */
+    k[3]  = SDL_SCANCODE_RIGHT;    /* turn right  */
+    k[4]  = SDL_SCANCODE_A;        /* A  -- accelerate */
+    k[5]  = SDL_SCANCODE_Z;        /* B  -- reverse    */
+    k[6]  = SDL_SCANCODE_TAB;      /* X  -- automap    */
+    k[7]  = SDL_SCANCODE_B;        /* Y  -- drop bomb  */
+    k[8]  = SDL_SCANCODE_Q;        /* LB -- bank left  */
+    k[9]  = SDL_SCANCODE_E;        /* RB -- bank right */
+    k[10] = SDL_SCANCODE_SPACE;    /* LT -- secondary fire */
+    k[11] = SDL_SCANCODE_LCTRL;    /* RT -- primary fire   */
+    k[12] = SDL_SCANCODE_RETURN;   /* Start  */
+    k[13] = SDL_SCANCODE_ESCAPE;   /* Select */
 }
 
 bool load_app_config(const std::string &path, AppConfig &out)

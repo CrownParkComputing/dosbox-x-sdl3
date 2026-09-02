@@ -12,6 +12,17 @@
 
 namespace retrodos {
 
+void pad_button_colour(int b, float *rgb)
+{
+    switch (b) {
+    case PAD_A: rgb[0] = 0.24f; rgb[1] = 0.72f; rgb[2] = 0.25f; break;  /* green  */
+    case PAD_B: rgb[0] = 0.83f; rgb[1] = 0.19f; rgb[2] = 0.17f; break;  /* red    */
+    case PAD_X: rgb[0] = 0.16f; rgb[1] = 0.44f; rgb[2] = 0.86f; break;  /* blue   */
+    case PAD_Y: rgb[0] = 0.93f; rgb[1] = 0.76f; rgb[2] = 0.13f; break;  /* yellow */
+    default:    rgb[0] = rgb[1] = rgb[2] = 1.0f;                break;
+    }
+}
+
 const char *pad_button_name(int b)
 {
     switch (b) {
@@ -23,8 +34,10 @@ const char *pad_button_name(int b)
     case PAD_B:      return "B";
     case PAD_X:      return "X";
     case PAD_Y:      return "Y";
-    case PAD_L:      return "L";
-    case PAD_R:      return "R";
+    case PAD_L:      return "LB";
+    case PAD_R:      return "RB";
+    case PAD_LT:     return "LT";
+    case PAD_RT:     return "RT";
     case PAD_START:  return "Start";
     case PAD_SELECT: return "Select";
     default:         return "?";
@@ -74,8 +87,11 @@ std::vector<PadControl> default_pad_layout(int width, int height)
     add(PAD_X, "X", face_cx, face_cy, -step,  0.0f);
     add(PAD_Y, "Y", face_cx, face_cy,  0.0f, -step);
 
-    add(PAD_L, "L", 0.10f, 0.20f, 0.0f, 0.0f);
-    add(PAD_R, "R", 0.90f, 0.20f, 0.0f, 0.0f);
+    /* Shoulders above triggers on each side, the way they sit on the pad. */
+    add(PAD_L,  "LB", 0.10f, 0.30f, 0.0f, 0.0f);
+    add(PAD_R,  "RB", 0.90f, 0.30f, 0.0f, 0.0f);
+    add(PAD_LT, "LT", 0.10f, 0.13f, 0.0f, 0.0f);
+    add(PAD_RT, "RT", 0.90f, 0.13f, 0.0f, 0.0f);
 
     /* Smaller and centred low: pressed between rounds, not during play. */
     PadControl sel;
@@ -214,8 +230,12 @@ void VirtualPad::draw(int w, int h) const
         const float  r = radius_px(c, w, h);
         const bool   on = (held_ & (1u << c.button)) != 0;
 
-        const ImU32 fill = ImGui::GetColorU32(ImVec4(1, 1, 1, on ? 0.55f : alpha_fill));
-        const ImU32 edge = ImGui::GetColorU32(ImVec4(1, 1, 1, alpha_border));
+        float rgb[3];
+        pad_button_colour(c.button, rgb);
+        const ImU32 fill = ImGui::GetColorU32(
+            ImVec4(rgb[0], rgb[1], rgb[2], on ? 0.70f : alpha_fill));
+        const ImU32 edge = ImGui::GetColorU32(
+            ImVec4(rgb[0], rgb[1], rgb[2], alpha_border));
 
         dl->AddCircleFilled(centre, r, fill, 32);
         dl->AddCircle(centre, r, edge, 32, editing_ ? 3.0f : 2.0f);

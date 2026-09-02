@@ -625,8 +625,14 @@ void controls_widgets(Settings &s)
         ImGui::PopID();
     }
 
-    if (ImGui::Button("Reset to DOS defaults", ImVec2(0, 0)))
+    if (ImGui::Button("DOS defaults", ImVec2(0, 0)))
         retrodos::default_pad_keys(s.pad_keys);
+    ImGui::SameLine();
+    if (ImGui::Button("Descent / 6DOF", ImVec2(0, 0)))
+        retrodos::descent_pad_keys(s.pad_keys);
+    ImGui::TextDisabled("Descent flies in six degrees of freedom, so it needs more\n"
+                        "than a d-pad and two buttons: aim on the stick, weapons on\n"
+                        "the triggers, throttle on A/B, roll on the shoulders.");
 }
 
 void settings_widgets(Settings &s)
@@ -1059,6 +1065,15 @@ int main(int argc, char **argv)
                     gp_buttons &= ~((1u << retrodos::PAD_LEFT) | (1u << retrodos::PAD_RIGHT));
                     if (scaled < -kDead) gp_buttons |= 1u << retrodos::PAD_LEFT;
                     if (scaled >  kDead) gp_buttons |= 1u << retrodos::PAD_RIGHT;
+                } else if (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ||
+                           ev.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+                    /* Triggers rest at 0 and run to full, so they are treated
+                     * as buttons with a threshold rather than an axis. Half
+                     * travel is where a finger means it. */
+                    const int bit = (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER)
+                                        ? retrodos::PAD_LT : retrodos::PAD_RT;
+                    if (scaled > 500) gp_buttons |=  (1u << bit);
+                    else              gp_buttons &= ~(1u << bit);
                 } else if (ev.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) {
                     gp_axis_y = scaled;
                     gp_buttons &= ~((1u << retrodos::PAD_UP) | (1u << retrodos::PAD_DOWN));
@@ -1439,20 +1454,33 @@ int main(int argc, char **argv)
 
                     /* A-Z strip: with thousands of titles, scrolling is not a
                      * navigation method. */
-                    if (ImGui::Button("All")) filter_letter = 0;
-                    for (char c = 'A'; c <= 'Z'; ++c) {
-                        ImGui::SameLine(0.0f, 2.0f);
-                        ImGui::PushID((int)c);
-                        const bool on = (filter_letter == c);
-                        if (on) ImGui::PushStyleColor(ImGuiCol_Button,
-                                    ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-                        const char lbl[2] = { c, 0 };
-                        if (ImGui::Button(lbl)) filter_letter = on ? 0 : c;
-                        if (on) ImGui::PopStyleColor();
-                        ImGui::PopID();
+                    /* The strip spans the pane: 28 equal cells for All, A-Z and
+                     * #. Letting them size themselves leaves a ragged row that
+                     * stops well short of the edge, and on a touchscreen the
+                     * wasted width is wasted target area. */
+                    {
+                        const float gapx = 3.0f;
+                        const float cell = (ImGui::GetContentRegionAvail().x -
+                                            gapx * 27.0f) / 28.0f;
+                        auto chip = [&](const char *label, char value) {
+                            const bool on = (filter_letter == value);
+                            if (on) ImGui::PushStyleColor(ImGuiCol_Button,
+                                        ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                            if (ImGui::Button(label, ImVec2(cell, 0)))
+                                filter_letter = on ? 0 : value;
+                            if (on) ImGui::PopStyleColor();
+                        };
+                        chip("All", 0);
+                        for (char c = 'A'; c <= 'Z'; ++c) {
+                            ImGui::SameLine(0.0f, gapx);
+                            ImGui::PushID((int)c);
+                            const char lbl[2] = { c, 0 };
+                            chip(lbl, c);
+                            ImGui::PopID();
+                        }
+                        ImGui::SameLine(0.0f, gapx);
+                        chip("#", '#');
                     }
-                    ImGui::SameLine(0.0f, 2.0f);
-                    if (ImGui::Button("#")) filter_letter = (filter_letter == '#') ? 0 : '#';
 
                     std::vector<int> shown;
                     shown.reserve(games.size());

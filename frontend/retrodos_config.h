@@ -47,9 +47,9 @@ struct Settings {
      * on a control scheme: Descent wants the arrows and Ctrl, Keen wants Ctrl
      * and Alt for jump and pogo, and a flight sim wants the stick.
      *
-     * 0 means unbound. Indexed by PadButton; sized to PAD_COUNT, which is 12.
+     * 0 means unbound. Indexed by PadButton; sized to PAD_COUNT, which is 14.
      */
-    int         pad_keys[12] = {0};
+    int         pad_keys[14] = {0};
 
     /* Drive the emulated game port as well as (or instead of) sending keys.
      * Most DOS games are keyboard games, so keys are the default; a game that
@@ -63,7 +63,7 @@ struct Settings {
     bool        onscreen_pad        = true;
 
     bool operator==(const Settings &o) const {
-        for (int i = 0; i < 12; ++i)
+        for (int i = 0; i < 14; ++i)
             if (pad_keys[i] != o.pad_keys[i]) return false;
         return cycles_max == o.cycles_max && cycles_fixed == o.cycles_fixed &&
                core_dynamic == o.core_dynamic && memsize == o.memsize &&
@@ -78,6 +78,10 @@ struct Settings {
 /** The keys a DOS game most often wants, used when nothing has been bound.
  *  Fills all PAD_COUNT entries of Settings::pad_keys. */
 void default_pad_keys(int *keys);
+
+/** A mapping for the 6-degrees-of-freedom shooters -- Descent and its kin --
+ *  laid out for an Xbox-style pad. Fills all PAD_COUNT entries. */
+void descent_pad_keys(int *keys);
 
 /* App-level state that is not per-game. */
 struct AppConfig {

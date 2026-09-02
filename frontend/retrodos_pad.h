@@ -32,9 +32,15 @@ enum PadButton {
     PAD_UP = 0, PAD_DOWN, PAD_LEFT, PAD_RIGHT,
     PAD_A, PAD_B, PAD_X, PAD_Y,
     PAD_L, PAD_R,
+    PAD_LT, PAD_RT,
     PAD_START, PAD_SELECT,
     PAD_COUNT
 };
+
+/* The Xbox face-button colours. A DOS game has no notion of them, but the pad
+ * in the player's hands does, and matching it is what makes "A fires" mean
+ * anything at a glance. */
+void pad_button_colour(int button, float *rgb);
 
 /** Human-readable name, for the bindings UI. */
 const char *pad_button_name(int button);
