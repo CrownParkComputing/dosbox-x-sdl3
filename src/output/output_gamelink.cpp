@@ -27,6 +27,12 @@ extern uint32_t RunningProgramHash[4];
 
 /* Implemented by the DosboxMultiplatform bridge when it is linked in. Weak so
  * a plain dosbox-x build resolves it to null and skips the call below. */
+extern "C" bool retrodos_host_embedded(void) __attribute__((weak));
+static inline bool retrodos_host_embedded_or_false(void) {
+    return retrodos_host_embedded ? retrodos_host_embedded() : false;
+}
+#define retrodos_host_embedded() retrodos_host_embedded_or_false()
+
 extern "C" void retrodos_host_frame_posted(const uint32_t *pixels, int32_t width,
                                            int32_t height, int32_t pitch_bytes,
                                            double ratio) __attribute__((weak));
@@ -225,11 +231,23 @@ Bitu OUTPUT_GAMELINK_SetSize()
     sdl.deferred_resize = false;
     sdl.must_redraw_all = true;
 
-    sdl.window = GFX_SetSDLWindowMode(640, 200, SCREEN_GAMELINK);
-    if (sdl.window == NULL)
-        E_Exit("Could not set windowed video mode %ix%i: %s", (int)sdl.draw.width, (int)sdl.draw.height, SDL_GetError());
+    /* An EMBEDDED host owns the window; Game Link needs neither.
+     *
+     * This output renders into its own malloc'd framebuffer, yet it still asks
+     * for a window and then calls SDL_GetWindowSurface() on it. That single
+     * call is destructive to a host: presenting a WINDOW SURFACE and presenting
+     * a RENDERER are mutually exclusive in SDL, so from here on the host's
+     * SDL_RenderPresent draws into nothing -- it still returns success, the
+     * texture still uploads, the destination rect is still right, and the
+     * screen is simply black. Withholding the window instead just moves the
+     * failure to the E_Exit above. Skipping both is what actually works. */
+    if (!retrodos_host_embedded()) {
+        sdl.window = GFX_SetSDLWindowMode(640, 200, SCREEN_GAMELINK);
+        if (sdl.window == NULL)
+            E_Exit("Could not set windowed video mode %ix%i: %s", (int)sdl.draw.width, (int)sdl.draw.height, SDL_GetError());
 
-    sdl.surface = SDL_GetWindowSurface(sdl.window);
+        sdl.surface = SDL_GetWindowSurface(sdl.window);
+    }
 
     // FIXME: find proper way to refresh the menu bar without causing infinite recursion
     static bool in_setsize = false;

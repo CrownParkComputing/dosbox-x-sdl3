@@ -180,9 +180,17 @@ SDL_Window *g_host_window = nullptr;
 
 void engine_thread(std::string conf, std::string defaultdir)
 {
-    /* The engine adopts this rather than creating a second window -- see
-     * retrodos_host_set_window() for why that matters on Android. */
-    retrodos_host_set_window(g_host_window);
+    /* Deliberately NOT handing the engine our window.
+     *
+     * Lending it looked reasonable -- it satisfies the engine's assumption
+     * that sdl.window is valid -- but a borrowed window is a window the engine
+     * will happily reconfigure, destroy and present to, and any one of those
+     * silently kills the host's renderer: draws keep reporting success while
+     * the screen stays black. The null-window paths it used to crash on are
+     * guarded now, so the safer contract is that the engine has NO window and
+     * cannot reach the host's at all. */
+    retrodos_host_set_window(nullptr);
+    (void)g_host_window;
 
     char a0[] = "dosbox-x";
     char a1[] = "-conf";
@@ -369,18 +377,7 @@ int main(int argc, char **argv)
             /* Poll the serial rather than the pixels: DOS text mode can sit on
              * an identical picture for seconds, and re-uploading it every
              * frame would burn a handheld's battery for nothing. */
-            /* one line a second, not one a frame */
-            static Uint64 last_log = 0;
-            const Uint64 now_ms = SDL_GetTicks();
             const uint64_t serial = retrodos_host_framebuffer_serial();
-            if (now_ms - last_log > 1000) {
-                last_log = now_ms;
-                int dw = 0, dh = 0;
-                retrodos_host_framebuffer_size(&dw, &dh);
-                LOGI("tap: serial=%llu size=%dx%d running=%d",
-                     (unsigned long long)serial, dw, dh,
-                     (int)retrodos_host_is_running());
-            }
             if (serial != last_serial) {
                 int w = 0, h = 0;
                 retrodos_host_framebuffer_size(&w, &h);
@@ -389,24 +386,27 @@ int main(int argc, char **argv)
                     uint64_t got = 0;
                     const int copied = retrodos_host_copy_framebuffer(
                         fb_copy.data(), (int)fb_copy.size(), &w, &h, &got);
-                    if (now_ms - last_log <= 20) {
-                        size_t nz = 0;
-                        for (size_t i = 0; i < fb_copy.size(); ++i)
-                            if (fb_copy[i] & 0x00FFFFFFu) nz++;
-                        LOGI("copy=%d %dx%d nonblack=%zu/%zu tex=%p",
-                             copied, w, h, nz, fb_copy.size(), (void *)fb_tex);
-                    }
                     if (copied) {
                         if (!fb_tex || fb_tex_w != w || fb_tex_h != h) {
                             if (fb_tex) SDL_DestroyTexture(fb_tex);
                             /* The engine publishes 0xAARRGGBB little-endian,
                              * which is exactly ARGB8888 -- no conversion. */
-                            fb_tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
+                            /* XRGB, not ARGB: the engine's framebuffer carries
+                             * no meaningful alpha -- the scaler writes colour
+                             * and leaves the top byte alone -- so treating it
+                             * as alpha draws a fully transparent picture. The
+                             * draw still succeeds, the rect is still right, and
+                             * the screen stays black. XRGB ignores that byte,
+                             * and BLENDMODE_NONE makes it explicit. */
+                            fb_tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888,
                                                        SDL_TEXTUREACCESS_STREAMING, w, h);
                             SDL_SetTextureScaleMode(fb_tex, SDL_SCALEMODE_NEAREST);
+                            SDL_SetTextureBlendMode(fb_tex, SDL_BLENDMODE_NONE);
                             fb_tex_w = w; fb_tex_h = h;
                         }
-                        SDL_UpdateTexture(fb_tex, nullptr, fb_copy.data(), w * 4);
+                        const bool up = SDL_UpdateTexture(fb_tex, nullptr,
+                                                          fb_copy.data(), w * 4);
+                        if (!up) LOGI("UpdateTexture FAILED: %s", SDL_GetError());
                         last_serial = serial;
                     }
                 }

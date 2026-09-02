@@ -1461,6 +1461,14 @@ void BlankDisplay(void) {
     else {
         SDL_FillRect(sdl.surface, nullptr, 0);
 #if defined(C_SDL2)
+        /* Presenting a WINDOW SURFACE and presenting a RENDERER are mutually
+         * exclusive in SDL: the first call to SDL_UpdateWindowSurface puts the
+         * window into surface mode for good, and from then on the host's
+         * SDL_RenderPresent draws into a void. It still reports success, the
+         * texture still updates, the destination rect is still correct -- the
+         * screen just goes black. Nothing in Game Link needs this; the host
+         * clears its own window. */
+        if (!retrodos_host_embedded())
         SDL_UpdateWindowSurface(sdl.window);
 #else
         SDL_Flip(sdl.surface);
@@ -1508,6 +1516,7 @@ void GFX_SDL_Overscan(void) {
                     SDL_FillRect(sdl.surface, &sdl.updateRects[i], (Uint32)border_color);
 
 #if defined(C_SDL2)
+                if (!retrodos_host_embedded()) /* see above: surface vs renderer */
                 SDL_UpdateWindowSurfaceRects(sdl.window, sdl.updateRects, 4);
 #else
                 SDL_UpdateRects(sdl.surface, 4, sdl.updateRects);
