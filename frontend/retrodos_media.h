@@ -82,6 +82,11 @@ bool media_poll(MediaResult &out);
 /** Last email used, to prefill the sign-in form. */
 std::string media_last_email(void);
 
+/** Live progress of a running download, or empty when nothing is in flight.
+ *  Sampled rather than queued -- a 1 GB title is minutes of otherwise silent
+ *  work, and the UI wants the latest figure each frame, not every figure. */
+std::string media_progress(void);
+
 /** Load a cached RGBA image written by the bridge. Returns false if the file is
  *  missing or malformed. */
 bool media_read_art(const std::string &path, int &w, int &h,

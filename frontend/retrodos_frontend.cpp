@@ -999,6 +999,15 @@ int main(int argc, char **argv)
                     ImGui::TextWrapped("%s", media_msg.c_str());
                     ImGui::Separator();
                 }
+                /* A 1 GB title takes minutes; without this the screen looks
+                 * frozen and the obvious reaction is to press Download again. */
+                {
+                    const std::string prog = retrodos::media_progress();
+                    if (!prog.empty()) {
+                        ImGui::TextWrapped("%s", prog.c_str());
+                        ImGui::Separator();
+                    }
+                }
 
                 if (ImGui::BeginTabBar("##mediatabs")) {
 

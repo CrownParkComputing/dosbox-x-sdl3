@@ -82,6 +82,15 @@ object MediaBridge {
     @JvmStatic
     fun poll(): String = results.poll() ?: ""
 
+    /* A DOS game here is routinely hundreds of megabytes -- Harvester is 1.2 GB
+     * -- so a download is minutes of apparent silence. Progress is published
+     * separately from [results] because it is sampled, not queued: the UI wants
+     * the latest value each frame, not every value ever set. */
+    @Volatile private var progressText = ""
+
+    @JvmStatic
+    fun progress(): String = progressText
+
     @JvmStatic fun beginStatus()  = submit("STATUS")  { doStatus() }
     @JvmStatic fun beginLogout()  = submit("LOGOUT")  { doLogout() }
 
@@ -232,6 +241,27 @@ object MediaBridge {
         val headers = c.headerFields ?: emptyMap()
         c.disconnect()
         return Resp(code, bytes, headers)
+    }
+
+    /**
+     * Open a connection and hand back the live stream instead of a byte array.
+     *
+     * Required for game downloads: buffering the response first would mean
+     * holding the whole title in RAM, and these are routinely 300 MB to 1.2 GB.
+     * No handheld survives that, so the body is consumed straight to disk.
+     */
+    private fun httpOpen(path: String, accept: String, readTimeout: Int): HttpURLConnection {
+        val c = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15_000
+            this.readTimeout = readTimeout
+            setRequestProperty("User-Agent", UA)
+            setRequestProperty("Accept", accept)
+            val key = storedApiKey()
+            if (key != null) setRequestProperty("Authorization", "Bearer $key")
+            else storedSession()?.let { setRequestProperty("Cookie", it) }
+        }
+        return c
     }
 
     /** Read at most [cap] bytes. An unbounded read of a hostile or simply huge
@@ -513,9 +543,14 @@ object MediaBridge {
     /**
      * Download a game into [destDir].
      *
+     * The body is STREAMED to disk rather than buffered. These are not small
+     * files -- the catalogue is full of 300 MB titles and Harvester is 1.2 GB
+     * -- and holding one in memory first would fail on any handheld.
+     *
      * The server sends a single rom unwrapped and multiple roms as a zip, so
-     * the shape is decided from the PK magic rather than from the file count --
-     * sniffing the bytes cannot disagree with what actually arrived.
+     * the shape is decided by sniffing the PK magic off the front of the
+     * stream rather than by trusting the file count: sniffed bytes cannot
+     * disagree with what actually arrived.
      */
     private fun doDownload(slug: String, destDir: String): String {
         val me = http("/api/me")
@@ -534,47 +569,114 @@ object MediaBridge {
             .ifEmpty { slug })
         val out = File(destDir, title).apply { mkdirs() }
 
-        val z = http("/api/systems/$SYSTEM/games/${enc(slug)}/zip?types=rom",
-                     accept = "application/octet-stream, application/zip",
-                     cap = ART_CAP.coerceAtLeast(256 shl 20),
-                     readTimeout = 600_000)
-        if (z.code != 200) {
-            if (z.code == 402) return fail("DOWNLOAD", "out of credits: " + z.error())
-            return fail("DOWNLOAD", z.error())
+        val conn = httpOpen("/api/systems/$SYSTEM/games/${enc(slug)}/zip?types=rom",
+                            "application/octet-stream, application/zip", 600_000)
+        val code = conn.responseCode
+        if (code != 200) {
+            val err = try {
+                JSONObject(String(conn.errorStream?.readBytes() ?: ByteArray(0)))
+                    .optString("error").ifEmpty { "HTTP $code" }
+            } catch (e: Exception) { "HTTP $code" }
+            conn.disconnect()
+            progressText = ""
+            return fail("DOWNLOAD", if (code == 402) "out of credits: $err" else err)
         }
-        if (z.body.isEmpty()) return fail("DOWNLOAD", "empty response")
 
+        val expected = roms.optJSONObject(0)?.optLong("size") ?: 0L
+        val total = conn.contentLengthLong.let { if (it > 0) it else expected }
         var written = 0
-        val isZip = z.body.size > 4 && z.body[0] == 'P'.code.toByte() &&
-                    z.body[1] == 'K'.code.toByte() &&
-                    z.body[2] == 3.toByte() && z.body[3] == 4.toByte()
 
-        if (isZip && roms.length() > 1) {
-            ZipInputStream(z.body.inputStream()).use { zin ->
-                while (true) {
-                    val e = zin.nextEntry ?: break
-                    if (!e.isDirectory) {
-                        val name = sanitise(File(e.name).name)
-                        if (name.isNotEmpty()) {
-                            File(out, name).outputStream().use { zin.copyTo(it, 64 * 1024) }
-                            written++
+        try {
+            /* Buffered so the magic can be peeked and pushed back; the zip
+             * reader below then starts from byte zero either way. */
+            val input = java.io.BufferedInputStream(conn.inputStream, 64 * 1024)
+            input.mark(4)
+            val magic = ByteArray(4)
+            val got = input.read(magic)
+            input.reset()
+            val isZip = got == 4 && magic[0] == 'P'.code.toByte() &&
+                        magic[1] == 'K'.code.toByte() &&
+                        magic[2] == 3.toByte() && magic[3] == 4.toByte()
+
+            if (isZip && roms.length() > 1) {
+                ZipInputStream(input).use { zin ->
+                    while (true) {
+                        val e = zin.nextEntry ?: break
+                        if (!e.isDirectory) {
+                            val name = sanitise(File(e.name).name)
+                            if (name.isNotEmpty()) {
+                                File(out, name).outputStream().use { o ->
+                                    copyWithProgress(zin, o, title, 0L)
+                                }
+                                written++
+                            }
                         }
+                        zin.closeEntry()
                     }
-                    zin.closeEntry()
                 }
+            } else {
+                /* A single rom comes back as the file itself. Its name comes
+                 * from the catalogue entry, since the body carries none. */
+                val first = roms.optJSONObject(0)?.optString("file") ?: "$slug.zip"
+                val name = sanitise(File(first).name).ifEmpty { "$slug.zip" }
+                File(out, name).outputStream().use { o ->
+                    copyWithProgress(input, o, title, total)
+                }
+                written = 1
             }
-        } else {
-            /* A single rom comes back as the file itself. Take its name from the
-             * catalogue entry, since the body carries none. */
-            val first = roms.optJSONObject(0)?.optString("file") ?: "$slug.zip"
-            val name = sanitise(File(first).name).ifEmpty { "$slug.zip" }
-            File(out, name).writeBytes(z.body)
-            written = 1
+        } catch (e: Exception) {
+            /* Leave nothing behind. The destination is inside the library root,
+             * so an empty or half-written directory would be scanned and listed
+             * as a game that cannot start. */
+            cleanupFailed(out)
+            throw e
+        } finally {
+            conn.disconnect()
+            progressText = ""
         }
-        if (written == 0) return fail("DOWNLOAD", "nothing was written")
+
+        if (written == 0) { cleanupFailed(out); return fail("DOWNLOAD", "nothing was written") }
 
         Log.i(TAG, "downloaded '$title' ($written file(s)) -> ${out.absolutePath}")
         return ok("DOWNLOAD", "$title: $written file(s)", "${out.absolutePath}\n")
+    }
+
+    /** Copy, publishing progress as it goes. [total] of 0 means unknown, in
+     *  which case only the amount so far can be reported. */
+    private fun copyWithProgress(input: InputStream, out: java.io.OutputStream,
+                                 title: String, total: Long) {
+        val buf = ByteArray(256 * 1024)
+        var done = 0L
+        var lastPost = 0L
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            done += n
+            /* Publish at most every 4 MB: this runs in the inner copy loop and
+             * formatting a string per 256 KB block would cost more than the I/O. */
+            if (done - lastPost >= 4L shl 20) {
+                lastPost = done
+                val mb = done / (1024.0 * 1024.0)
+                progressText = if (total > 0)
+                    "%s  %.0f / %.0f MB  (%d%%)".format(
+                        title, mb, total / (1024.0 * 1024.0), done * 100 / total)
+                else
+                    "%s  %.0f MB".format(title, mb)
+            }
+        }
+        out.flush()
+    }
+
+    /** Delete a failed download's directory, so a partial title never shows up
+     *  in the library as a game that will not run. */
+    private fun cleanupFailed(dir: File) {
+        try {
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
+        } catch (e: Exception) {
+            Log.w(TAG, "could not clean up ${dir.absolutePath}: $e")
+        }
     }
 
     /** Strip anything that is a path, a control character, or illegal on the

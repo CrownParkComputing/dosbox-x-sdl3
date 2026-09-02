@@ -267,6 +267,7 @@ bool media_poll(MediaResult &out)
 }
 
 std::string media_last_email(void) { return call_string("lastEmail"); }
+std::string media_progress(void)   { return call_string("progress"); }
 
 } /* namespace retrodos */
 
@@ -288,6 +289,7 @@ void media_begin_artwork(const std::string &, const std::string &) {}
 void media_begin_download(const std::string &, const std::string &) {}
 bool media_poll(MediaResult &) { return false; }
 std::string media_last_email(void) { return std::string(); }
+std::string media_progress(void)   { return std::string(); }
 
 } /* namespace retrodos */
 
