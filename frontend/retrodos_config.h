@@ -64,8 +64,13 @@ bool save_game_settings(const std::string &dir, const std::string &game, const S
 
 /* Build the DOSBox-X conf for one title. mount_dir is a REAL filesystem path:
  * DOSBox-X mounts a directory by path and cannot be handed a content:// URI. */
+/* run_raw emits run_cmd into autoexec unquoted. Program names are quoted
+ * because DOS titles routinely contain spaces, but a built-in DOSBox-X command
+ * that takes an argument -- "boot FREEDOS.IMG" -- would then be read as the
+ * name of a program to find, and fail. */
 std::string build_conf(const Settings &s, const std::string &title,
-                       const std::string &mount_dir, const std::string &run_cmd);
+                       const std::string &mount_dir, const std::string &run_cmd,
+                       bool run_raw = false);
 
 } /* namespace retrodos */
 

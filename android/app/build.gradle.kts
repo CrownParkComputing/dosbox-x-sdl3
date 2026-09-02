@@ -52,4 +52,9 @@ android {
 dependencies {
     // SDL3's own Java glue, produced by the SDL3 Android build.
     implementation(files("libs/SDL3.jar"))
+
+    // DocumentFile is how a SAF tree is walked; activity gives us the
+    // ActivityResultLauncher the folder picker needs.
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.activity:activity-ktx:1.9.3")
 }

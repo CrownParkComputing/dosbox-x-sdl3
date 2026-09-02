@@ -229,5 +229,23 @@ CXX_SHARED="$TOOLCHAIN/sysroot/usr/lib/$TRIPLE/libc++_shared.so"
 # The SDL3 Java glue an SDL3 Android activity needs.
 find "$SDL3_PREFIX" -name 'SDL3-*.jar' ! -name '*sources*' -exec cp -f {} "$OUT/SDL3.jar" \; 2>/dev/null || true
 
+# Install into the directory Gradle actually packages.
+#
+# This is not a convenience. Gradle reads native libraries from
+# app/src/main/jniLibs (see app/build.gradle.kts), NOT from this script's output
+# directory, and its mergeDebugNativeLibs task reports UP-TO-DATE when nothing
+# there has changed. Leaving the copy as a manual step therefore produces a
+# BUILD SUCCESSFUL that silently ships the previous .so -- the build looks
+# clean, the app runs, and none of the new code is in it.
+# $HERE, not a path relative to $0: the script cds into the build tree well
+# before this point, so a relative destination would quietly create the
+# directory somewhere inside the build output and leave the real one stale.
+JNI_LIBS="$HERE/app/src/main/jniLibs/$ANDROID_ABI"
+mkdir -p "$JNI_LIBS"
+cp -f "$OUT/libretrodos.so" "$OUT/libSDL3.so" "$JNI_LIBS/"
+[ -f "$OUT/libc++_shared.so" ] && cp -f "$OUT/libc++_shared.so" "$JNI_LIBS/"
+
 echo "==> done ($ANDROID_ABI):"
 ls -lh "$OUT"/libretrodos.so "$OUT"/libSDL3.so "$OUT"/libc++_shared.so "$OUT"/SDL3.jar 2>/dev/null
+echo "==> installed for packaging:"
+ls -lh "$JNI_LIBS"/*.so

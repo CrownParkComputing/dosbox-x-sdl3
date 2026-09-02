@@ -138,7 +138,8 @@ bool save_game_settings(const std::string &dir, const std::string &game, const S
 }
 
 std::string build_conf(const Settings &s, const std::string &title,
-                       const std::string &mount_dir, const std::string &run_cmd)
+                       const std::string &mount_dir, const std::string &run_cmd,
+                       bool run_raw)
 {
     std::string c;
 
@@ -172,7 +173,13 @@ std::string build_conf(const Settings &s, const std::string &title,
     c += "[autoexec]\n";
     c += "mount C \"" + mount_dir + "\"\n";
     c += "C:\n";
-    if (!run_cmd.empty()) c += "\"" + run_cmd + "\"\n";
+    if (!run_cmd.empty()) {
+        /* A program name is quoted because DOS titles are full of spaces; a
+         * built-in command with arguments must not be, or it is looked up as
+         * one long filename. */
+        if (run_raw) c += run_cmd + "\n";
+        else         c += "\"" + run_cmd + "\"\n";
+    }
 
     return c;
 }
