@@ -637,6 +637,13 @@ object MediaBridge {
 
         if (written == 0) { cleanupFailed(out); return fail("DOWNLOAD", "nothing was written") }
 
+        /* The catalogue ships games as archives, but the launcher starts a game
+         * by finding a .BAT/.COM/.EXE in its folder and DOSBox-X mounts that
+         * folder as a drive. A downloaded .zip left as-is therefore appears in
+         * the library as a title with nothing to run. Unpack it here so a
+         * downloaded game is immediately playable. */
+        extractArchives(out)
+
         Log.i(TAG, "downloaded '$title' ($written file(s)) -> ${out.absolutePath}")
         return ok("DOWNLOAD", "$title: $written file(s)", "${out.absolutePath}\n")
     }
@@ -666,6 +673,78 @@ object MediaBridge {
             }
         }
         out.flush()
+    }
+
+    /**
+     * Unpack every .zip sitting directly in [dir], then delete the archive.
+     *
+     * Only the top level, and not recursively: a game that legitimately ships
+     * an archive as data should keep it.
+     */
+    private fun extractArchives(dir: File) {
+        val zips = dir.listFiles()?.filter {
+            it.isFile && it.name.endsWith(".zip", true)
+        } ?: return
+
+        for (z in zips) {
+            progressText = "Extracting ${z.name}..."
+            try {
+                ZipInputStream(z.inputStream().buffered(64 * 1024)).use { zin ->
+                    while (true) {
+                        val e = zin.nextEntry ?: break
+                        val target = File(dir, e.name)
+                        /* Reject entries that escape the folder: a crafted
+                         * archive with ../ paths would otherwise write anywhere
+                         * the app can reach. */
+                        if (!target.canonicalPath.startsWith(dir.canonicalPath + File.separator)) {
+                            Log.w(TAG, "skipping suspicious entry ${e.name}")
+                            zin.closeEntry(); continue
+                        }
+                        if (e.isDirectory) target.mkdirs()
+                        else {
+                            target.parentFile?.mkdirs()
+                            target.outputStream().use { zin.copyTo(it, 64 * 1024) }
+                        }
+                        zin.closeEntry()
+                    }
+                }
+                z.delete()
+                Log.i(TAG, "extracted ${z.name}")
+            } catch (e: Exception) {
+                /* Keep the archive on failure: a half-unpacked game plus a
+                 * deleted source would leave nothing to retry from. */
+                Log.w(TAG, "could not extract ${z.name}: $e")
+            }
+        }
+        flattenSingleFolder(dir)
+        progressText = ""
+    }
+
+    /**
+     * Lift the contents of a lone wrapper directory up into [dir].
+     *
+     * Archives in this catalogue usually contain one top-level folder, so a
+     * plain extraction leaves the game one level below the folder the emulator
+     * mounts as C:. The launcher looks for a runnable in the mount directory
+     * itself, so without this the title appears with nothing to run.
+     *
+     * Bounded rather than recursive: a couple of nested wrappers happen, an
+     * unbounded walk into a game's own subdirectories does not.
+     */
+    private fun flattenSingleFolder(dir: File) {
+        repeat(3) {
+            val kids = dir.listFiles() ?: return
+            if (kids.size != 1 || !kids[0].isDirectory) return
+            val inner = kids[0]
+            val moved = inner.listFiles() ?: return
+            for (f in moved) {
+                if (!f.renameTo(File(dir, f.name))) {
+                    Log.w(TAG, "could not flatten ${f.name}")
+                    return
+                }
+            }
+            inner.delete()
+        }
     }
 
     /** Delete a failed download's directory, so a partial title never shows up

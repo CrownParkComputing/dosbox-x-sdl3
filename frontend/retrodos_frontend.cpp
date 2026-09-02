@@ -438,11 +438,32 @@ int main(int argc, char **argv)
 
     std::vector<Game> games;
     auto refresh = [&]() {
-        /* A granted SAF tree replaces the folder scan: it is what the user
-         * actually chose, and the app-private folder is then only a staging
-         * area. */
-        games = retrodos::saf_has_grant() ? scan_saf_library()
-                                          : scan_library(cfg.library_root);
+        /* BOTH sources, always.
+         *
+         * A granted SAF tree used to replace the folder scan entirely, on the
+         * grounds that it is what the user picked. That was wrong the moment
+         * games could be downloaded: a download lands in library_root, which is
+         * a real path we can mount, and the SAF-only scan meant it could never
+         * appear in the list -- the title downloaded successfully and simply
+         * vanished. */
+        games = scan_library(cfg.library_root);
+
+        if (retrodos::saf_has_grant()) {
+            /* A local copy wins over the SAF entry for the same title: it is
+             * already a real path, so it starts without being staged first. */
+            std::vector<std::string> keys;
+            keys.reserve(games.size());
+            for (const auto &g : games) keys.push_back(canon(g.name));
+
+            for (auto &g : scan_saf_library()) {
+                if (std::find(keys.begin(), keys.end(), canon(g.name)) != keys.end())
+                    continue;
+                games.push_back(g);
+            }
+            std::sort(games.begin(), games.end(), [](const Game &a, const Game &b) {
+                return SDL_strcasecmp(a.name.c_str(), b.name.c_str()) < 0;
+            });
+        }
 
         /* Nothing found -- a fresh install, a revoked grant, or an absent SD
          * card. Offer the bundled content rather than an empty list, which
@@ -1005,6 +1026,22 @@ int main(int argc, char **argv)
                     const std::string prog = retrodos::media_progress();
                     if (!prog.empty()) {
                         ImGui::TextWrapped("%s", prog.c_str());
+                        /* The bridge reports "... (37%)" when the length is
+                         * known. Pull it back out for a bar: a number moving in
+                         * text is far less legible at arm's length than a bar
+                         * that visibly fills. */
+                        float frac = -1.0f;
+                        const size_t pc = prog.rfind('%');
+                        if (pc != std::string::npos && pc > 0) {
+                            size_t b = prog.rfind('(', pc);
+                            if (b != std::string::npos)
+                                frac = (float)atof(prog.c_str() + b + 1) / 100.0f;
+                        }
+                        if (frac >= 0.0f && frac <= 1.0f)
+                            ImGui::ProgressBar(frac, ImVec2(full.x * 0.6f, 0.0f));
+                        else
+                            ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(),
+                                               ImVec2(full.x * 0.6f, 0.0f), "working");
                         ImGui::Separator();
                     }
                 }
@@ -1133,20 +1170,32 @@ int main(int argc, char **argv)
 
                             ImGui::Text("%zu titles", catalogue.size());
                             ImGui::BeginChild("##cat");
+
+                            /* Rows are given room to breathe: at arm's length on
+                             * a handheld, a list packed at text height is both
+                             * hard to read and easy to mis-tap -- and a mis-tap
+                             * here starts a download that can run to a gigabyte.
+                             * The clipper is told the height explicitly so its
+                             * scroll maths matches what is actually drawn. */
+                            const float row_h = ImGui::GetFrameHeight() * 1.7f;
+
                             ImGuiListClipper clip;
-                            clip.Begin((int)catalogue.size());
+                            clip.Begin((int)catalogue.size(), row_h);
                             while (clip.Step()) {
                                 for (int r = clip.DisplayStart; r < clip.DisplayEnd; ++r) {
                                     const retrodos::MediaGame &cg = catalogue[r];
                                     ImGui::PushID(r);
+
+                                    ImGui::AlignTextToFramePadding();
                                     ImGui::TextUnformatted(cg.title.c_str());
                                     ImGui::SameLine(full.x * 0.6f);
+                                    ImGui::AlignTextToFramePadding();
                                     ImGui::TextDisabled("%.1f MB",
                                                         (double)cg.bytes / (1024.0 * 1024.0));
                                     ImGui::SameLine(full.x * 0.8f);
                                     ImGui::BeginDisabled(media_busy || cg.rom_files == 0);
-                                    if (ImGui::SmallButton(cg.rom_files ? "Download"
-                                                                        : "No files")) {
+                                    if (ImGui::Button(cg.rom_files ? "Download"
+                                                                   : "No files")) {
                                         media_busy = true;
                                         media_msg  = "Downloading " + cg.title + "...";
                                         /* Straight into the library root, so the
@@ -1156,6 +1205,11 @@ int main(int argc, char **argv)
                                                                        cfg.library_root);
                                     }
                                     ImGui::EndDisabled();
+
+                                    /* Pad the row out to row_h so every entry
+                                     * occupies exactly what the clipper assumed. */
+                                    const float used = ImGui::GetFrameHeight();
+                                    if (row_h > used) ImGui::Dummy(ImVec2(0.0f, row_h - used));
                                     ImGui::PopID();
                                 }
                             }
