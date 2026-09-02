@@ -680,8 +680,21 @@ unsigned long long mixer_sample_counter = 0;
  * C++ forbids an extern "C" linkage specification inside a function body, and
  * these must be weak so a plain dosbox-x build (which does not link the
  * backend) resolves them to null and behaves exactly as before. */
+/* Apple cannot express "optional symbol" in a STATIC link. __attribute__((weak))
+ * on a declaration means a weak DEFINITION in Mach-O, and weak_import resolves
+ * to null only for a symbol some dylib might supply -- with no library behind
+ * it, ld fails with an undefined symbol either way. The Apple builds here use
+ * SDL's own audio, so the answer is known at compile time: null function
+ * pointers keep every test and call site below compiling and behaving exactly
+ * as they do on a platform where the backend is genuinely absent. Define
+ * HAVE_HOST_AUDIO_BACKEND to link a real one. */
+#if defined(__APPLE__) && !defined(HAVE_HOST_AUDIO_BACKEND)
+static int  (*const audio_backend_init)(int, int, int, int *, int *) = nullptr;
+static void (*const audio_backend_write)(const int16_t *, int) = nullptr;
+#else
 extern "C" int audio_backend_init(int, int, int, int *, int *) __attribute__((weak));
 extern "C" void audio_backend_write(const int16_t *, int) __attribute__((weak));
+#endif
 
 
 double mixer_start_pic_time = 0;

@@ -8480,7 +8480,16 @@ void jsc_run(const char *jskey) {
 void DISP2_Init(uint8_t color), DISP2_Shut();
 //extern void UI_Init(void);
 void grGlideShutdown(void);
+/* A host application that owns the window -- the SDL3 + ImGui frontend --
+ * provides main() itself and reaches the engine through dosbox_x_main(). Two
+ * main() symbols in one EXECUTABLE is a duplicate-symbol error; on Android the
+ * engine is a shared library, so this never surfaced there. Renaming rather
+ * than removing keeps the body reachable through the wrapper below. */
+#if defined(RETRODOS_HOST_PROVIDES_MAIN)
+int dosbox_x_engine_main(int argc, char* argv[]) SDL_MAIN_NOEXCEPT {
+#else
 int main(int argc, char* argv[]) SDL_MAIN_NOEXCEPT {
+#endif
 #if (defined __i386__ || defined __x86_64__) && (!defined IS_OLDMACOS && (defined BSD || defined LINUX))
     dropPrivilegesTemp();
 #endif
@@ -10907,5 +10916,9 @@ void POD_Load_Sdlmain( std::istream& stream )
  * background thread. Calling main() directly from C++ is not permitted by the
  * standard, so it gets its own name. */
 extern "C" int dosbox_x_main(int argc, char *argv[]) {
+#if defined(RETRODOS_HOST_PROVIDES_MAIN)
+    return dosbox_x_engine_main(argc, argv);
+#else
     return main(argc, argv);
+#endif
 }

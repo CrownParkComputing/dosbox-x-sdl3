@@ -781,4 +781,62 @@ void menu_macosx_set_menuobj(DOSBoxMenu *new_altMenu) {
 }
 @end
 #endif
-#endif
+#else  /* IPHONEOS */
+
+/* IPHONEOS stubs.
+ *
+ * This file is the macOS menu bar, Cocoa dialogs, the Touch Bar and the dock
+ * menu. iOS has none of them, so the whole file compiles to nothing there --
+ * but menu.cpp and sdlmain.cpp declare and CALL these unconditionally under
+ * MACOSX, which an iOS build also defines. They must exist to link.
+ *
+ * They live here, next to the real implementations, so the two lists cannot
+ * drift apart silently. */
+#include <string>
+#include "menu.h"
+/* ScreenSizeInfo lives here, not in menu.h. */
+#include "sdlmain.h"
+
+bool has_touch_bar_support = false;
+bool macosx_detect_nstouchbar(void) { return false; }
+void macosx_reload_touchbar(void) { }
+void macosx_init_touchbar(void) { }
+void macosx_init_dock_menu(void) { }
+void macosx_alert(const char *, const char *) { }
+/* Decline rather than silently confirm: nothing can be asked without a dialog,
+ * and answering "yes" to a question the user never saw is the worse failure. */
+int macosx_yesno(const char *, const char *) { return 0; }
+int macosx_yesnocancel(const char *, const char *) { return 0; }
+std::string macosx_prompt_folder(const char *) { return std::string(); }
+bool IME_GetEnable(void) { return false; }
+void IME_SetEnable(int) { }
+
+/* Left unfilled: callers treat an untouched ScreenSizeInfo as "unknown", which
+ * is honest here. The SDL3 frontend owns the window and can report scale
+ * through SDL if this is ever wanted, so this is a stub by choice, not because
+ * the information is unreachable. */
+void macosx_GetWindowDPI(ScreenSizeInfo &) { }
+
+/* The Cocoa menu bar. menu.cpp calls these while building the native menu. */
+void  sdl_hax_nsMenuItemUpdateFromItem(void *, DOSBoxMenu::item &) { }
+void  sdl_hax_nsMenuItemSetTag(void *, unsigned int) { }
+void  sdl_hax_nsMenuItemSetSubmenu(void *, void *) { }
+void  sdl_hax_nsMenuAddItem(void *, void *) { }
+void *sdl_hax_nsMenuAllocSeparator(void) { return NULL; }
+void *sdl_hax_nsMenuAlloc(const char *) { return NULL; }
+void  sdl_hax_nsMenuRelease(void *) { }
+void *sdl_hax_nsMenuItemAlloc(const char *) { return NULL; }
+void  sdl_hax_nsMenuItemRelease(void *) { }
+void  sdl_hax_nsMenuAddApplicationMenu(void *) { }
+void  sdl_hax_macosx_setmenu(void *) { }
+void  menu_macosx_set_menuobj(DOSBoxMenu *) { }
+
+/* Window-manager niceties: always-on-top, excluding the window from capture,
+ * matching it to a monitor. All act on an NSWindow, and iOS has none. */
+void  sdl1_hax_set_topmost(unsigned char) { }
+void  MacOSEnableWindowCapture(unsigned int) { }
+void  qz_set_match_monitor_cb(void) { }
+void  SetAlpha(double) { }
+
+#endif /* IPHONEOS */
+
