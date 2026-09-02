@@ -1131,6 +1131,14 @@ bool IsDebuggerActive(void);
 extern std::string dosbox_title;
 
 void GFX_SetTitle(int32_t cycles, int frameskip, Bits timing, bool paused) {
+    /* The window belongs to the host when embedded, and this runs on the
+     * EMULATOR thread. SDL is not safe to drive from two threads at once:
+     * touching the window here while the host is mid-SDL_RenderPresent
+     * corrupts the renderer's state and the host crashes inside SDL with a
+     * small bogus address -- a fault that points at the frontend and is
+     * really the engine reaching across. The host draws its own title. */
+    if (retrodos_host_embedded()) return;
+
     (void)frameskip;//UNUSED
     (void)timing;//UNUSED
 //  static Bits internal_frameskip=0;
@@ -1804,6 +1812,22 @@ SDL_Window* GFX_GetSDLWindow(void) {
 
 SDL_Window* GFX_SetSDLWindowMode(uint16_t width, uint16_t height, SCREEN_TYPES screenType)
 {
+    /* When embedded, the window is the HOST'S. This function exists to
+     * (re)build the engine's own window and renderer for a new mode -- and it
+     * does that by DESTROYING them first. Run it against a borrowed window and
+     * it destroys the host's renderer and window mid-flight, after which the
+     * host's next SDL_RenderPresent jumps through a freed vtable and crashes
+     * with a tiny bogus address. The stack then points at the frontend, which
+     * is not where the bug is.
+     *
+     * Game Link needs no window mode at all -- it renders into a plain buffer
+     * whose size comes from GFX_SetSize -- so the honest answer is to hand
+     * back the host's window untouched. */
+    if (retrodos_host_embedded()) {
+        (void)width; (void)height; (void)screenType;
+        return sdl.window;
+    }
+
     static SCREEN_TYPES lastType = SCREEN_SURFACE;
     if (sdl.renderer) {
         SDL_DestroyRenderer(sdl.renderer);
@@ -2120,6 +2144,14 @@ unsigned char GFX_Ashift;
 unsigned char GFX_bpp;
 
 unsigned int GFX_GetBShift() {
+    /* Game Link publishes a FIXED format -- (b<<0)|(g<<8)|(r<<16)|(255<<24),
+     * see GFX_GetRGB's SCREEN_GAMELINK case -- and does not render through
+     * sdl.surface at all, which may legitimately be absent. Reading a surface
+     * that is not part of this output's path crashes here, called all the way
+     * from VGA_SetupDrawing via RENDER_SetPal. Answer from the format we
+     * actually publish. */
+    if (sdl.desktop.want_type == SCREEN_GAMELINK || sdl.surface == NULL)
+        return 0; /* blue occupies the low byte */
     return SDL_GetPixelFormatDetails(sdl.surface->format)->Bshift;
 }
 
@@ -5939,6 +5971,23 @@ void GFX_Events() {
      * which is why the app's queue is drained here and not only when the
      * picture changes. */
     if (retrodos_host_pump) retrodos_host_pump();
+
+    /* An EMBEDDED engine must not touch the SDL event queue.
+     *
+     * Everything below polls SDL for input and window events. That is right
+     * when the engine owns the window, and wrong when it does not: the host's
+     * main loop is already polling, and an SDL event queue drained by two
+     * threads means each one silently eats events meant for the other. On
+     * Android those events include the ACTIVITY LIFECYCLE, so the symptom is
+     * not lost keystrokes but
+     *   ActivityTaskManager: Activity pause timeout
+     * and the app being stopped moments after it starts -- which looks like a
+     * hang in the emulator and is really the frontend never being told it has
+     * focus.
+     *
+     * Input reaches the engine through retrodos_host_send_* instead, drained
+     * by the pump above, so nothing is lost by returning here. */
+    if (retrodos_host_embedded()) return;
 
 #if defined(C_SDL2) /* SDL 2.x---------------------------------- */
     //Don't poll too often. This can be heavy on the OS, especially Macs.

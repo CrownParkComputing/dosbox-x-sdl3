@@ -354,6 +354,14 @@ int main(int argc, char **argv)
         int win_w = 0, win_h = 0;
         SDL_GetWindowSizeInPixels(win, &win_w, &win_h);
 
+        /* ImGui's SDL_Renderer backend sets a clip rect per draw command. The
+         * launcher renders ImGui; the emulator view does not, so whatever clip
+         * was left standing from the last ImGui frame silently survives and
+         * can discard the DOS picture entirely -- frames arrive, the texture
+         * updates, nothing appears. Reset the render state each frame so this
+         * view starts from a known one. */
+        SDL_SetRenderClipRect(ren, NULL);
+        SDL_SetRenderViewport(ren, NULL);
         SDL_SetRenderDrawColor(ren, 12, 12, 16, 255);
         SDL_RenderClear(ren);
 
@@ -361,16 +369,34 @@ int main(int argc, char **argv)
             /* Poll the serial rather than the pixels: DOS text mode can sit on
              * an identical picture for seconds, and re-uploading it every
              * frame would burn a handheld's battery for nothing. */
+            /* one line a second, not one a frame */
+            static Uint64 last_log = 0;
+            const Uint64 now_ms = SDL_GetTicks();
             const uint64_t serial = retrodos_host_framebuffer_serial();
+            if (now_ms - last_log > 1000) {
+                last_log = now_ms;
+                int dw = 0, dh = 0;
+                retrodos_host_framebuffer_size(&dw, &dh);
+                LOGI("tap: serial=%llu size=%dx%d running=%d",
+                     (unsigned long long)serial, dw, dh,
+                     (int)retrodos_host_is_running());
+            }
             if (serial != last_serial) {
                 int w = 0, h = 0;
                 retrodos_host_framebuffer_size(&w, &h);
                 if (w > 0 && h > 0) {
                     fb_copy.resize((size_t)w * (size_t)h);
                     uint64_t got = 0;
-                    if (retrodos_host_copy_framebuffer(fb_copy.data(),
-                                                       (int)fb_copy.size(),
-                                                       &w, &h, &got)) {
+                    const int copied = retrodos_host_copy_framebuffer(
+                        fb_copy.data(), (int)fb_copy.size(), &w, &h, &got);
+                    if (now_ms - last_log <= 20) {
+                        size_t nz = 0;
+                        for (size_t i = 0; i < fb_copy.size(); ++i)
+                            if (fb_copy[i] & 0x00FFFFFFu) nz++;
+                        LOGI("copy=%d %dx%d nonblack=%zu/%zu tex=%p",
+                             copied, w, h, nz, fb_copy.size(), (void *)fb_tex);
+                    }
+                    if (copied) {
                         if (!fb_tex || fb_tex_w != w || fb_tex_h != h) {
                             if (fb_tex) SDL_DestroyTexture(fb_tex);
                             /* The engine publishes 0xAARRGGBB little-endian,
