@@ -1454,15 +1454,42 @@ int main(int argc, char **argv)
 
                     /* A-Z strip: with thousands of titles, scrolling is not a
                      * navigation method. */
-                    /* The strip spans the pane: 28 equal cells for All, A-Z and
-                     * #. Letting them size themselves leaves a ragged row that
-                     * stops well short of the edge, and on a touchscreen the
-                     * wasted width is wasted target area. */
+                    /* Only letters that actually have something behind them.
+                     *
+                     * A DOS collection is never evenly spread, and a full A-Z
+                     * strip is mostly dead targets: pressing one to be shown an
+                     * empty list teaches nothing except that the control lies.
+                     * Showing only the letters present makes every chip a
+                     * promise, and gives the remaining ones more width to be
+                     * tapped with. */
                     {
+                        bool has[27] = { false };   /* 0-25 = A-Z, 26 = '#' */
+                        for (const Game &g : games) {
+                            if (g.initial >= 'A' && g.initial <= 'Z') has[g.initial - 'A'] = true;
+                            else has[26] = true;
+                        }
+
+                        int count = 1;              /* "All" is always offered */
+                        for (bool b : has) if (b) ++count;
+
+                        /* A filter can outlive the games behind it -- a rescan,
+                         * a card removed. Drop it rather than leave the list
+                         * showing nothing with no visible way back. */
+                        if (filter_letter) {
+                            const bool still = (filter_letter == '#')
+                                ? has[26]
+                                : (filter_letter >= 'A' && filter_letter <= 'Z' &&
+                                   has[filter_letter - 'A']);
+                            if (!still) filter_letter = 0;
+                        }
+
                         const float gapx = 3.0f;
                         const float cell = (ImGui::GetContentRegionAvail().x -
-                                            gapx * 27.0f) / 28.0f;
+                                            gapx * (float)(count - 1)) / (float)count;
+                        bool first = true;
                         auto chip = [&](const char *label, char value) {
+                            if (!first) ImGui::SameLine(0.0f, gapx);
+                            first = false;
                             const bool on = (filter_letter == value);
                             if (on) ImGui::PushStyleColor(ImGuiCol_Button,
                                         ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
@@ -1470,16 +1497,16 @@ int main(int argc, char **argv)
                                 filter_letter = on ? 0 : value;
                             if (on) ImGui::PopStyleColor();
                         };
+
                         chip("All", 0);
                         for (char c = 'A'; c <= 'Z'; ++c) {
-                            ImGui::SameLine(0.0f, gapx);
+                            if (!has[c - 'A']) continue;
                             ImGui::PushID((int)c);
                             const char lbl[2] = { c, 0 };
                             chip(lbl, c);
                             ImGui::PopID();
                         }
-                        ImGui::SameLine(0.0f, gapx);
-                        chip("#", '#');
+                        if (has[26]) chip("#", '#');
                     }
 
                     std::vector<int> shown;
