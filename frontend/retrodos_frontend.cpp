@@ -66,6 +66,7 @@ struct Game {
     char        initial = '#';
     bool        from_saf = false;
     bool        run_raw  = false;  /* emit `run` unquoted (a DOSBox-X command) */
+    std::string autoexec;          /* [autoexec] from the game's own dosbox.conf */
     bool        is_demo  = false;  /* bundled content: never staged, never scanned */
     std::string slug;              /* RetroMedia catalogue slug, when matched */
 };
@@ -105,22 +106,107 @@ std::string canon(const std::string &s)
     return out;
 }
 
+/**
+ * The [autoexec] block of a dosbox.conf sitting in the game's own folder.
+ *
+ * Collections in this format ship a per-game conf that states exactly how the
+ * title starts -- mounting its CD image, picking a sound driver, calling the
+ * right batch file. That is authoritative, and far better than inferring a
+ * launch from whatever executables happen to be lying around: Descent's folder
+ * alone holds ASKECHO.COM, JCHOICE.EXE, network.bat and run.bat, and only one
+ * of those starts the game.
+ *
+ * The block is returned verbatim. These confs do not mount C: themselves --
+ * they assume the launcher has already mounted the game folder there, which is
+ * exactly what build_conf does.
+ */
+std::string bundled_autoexec(const std::string &dir)
+{
+    const std::string path = dir + "/dosbox.conf";
+    SDL_IOStream *io = SDL_IOFromFile(path.c_str(), "r");
+    if (!io) return std::string();
+
+    size_t len = 0;
+    void *data = SDL_LoadFile_IO(io, &len, true);   /* closes io */
+    if (!data) return std::string();
+    const std::string text((const char *)data, len);
+    SDL_free(data);
+
+    const size_t start = text.find("[autoexec]");
+    if (start == std::string::npos) return std::string();
+
+    std::string out;
+    size_t i = text.find('\n', start);
+    while (i != std::string::npos && i + 1 <= text.size()) {
+        size_t e = text.find('\n', ++i);
+        std::string line = text.substr(i, (e == std::string::npos ? text.size() : e) - i);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        /* Another section header ends the block. */
+        if (!line.empty() && line[0] == '[') break;
+
+        /* These confs are written for Windows, so a HOST path in them uses
+         * backslashes -- "imgmount d .\cd\descent.cue". On Android that is one
+         * literal filename and the mount silently fails, taking the game's CD
+         * with it. Only mount/imgmount arguments are host paths; a backslash
+         * anywhere else is a DOS path and must be left alone. */
+        if (SDL_strncasecmp(line.c_str(), "imgmount", 8) == 0 ||
+            SDL_strncasecmp(line.c_str(), "mount", 5) == 0) {
+            for (char &c : line) if (c == '\\') c = '/';
+        }
+
+        if (!line.empty()) out += line + "\n";
+        if (e == std::string::npos) break;
+        i = e;
+    }
+    return out;
+}
+
+/* Batch files that are plainly not the game. Collections leave installers and
+ * multiplayer helpers beside the real launcher, and picking one of those looks
+ * to the user like the emulator failing to start the title. */
+bool is_support_script(const std::string &f)
+{
+    static const char *kSkip[] = { "install", "setup", "uninstall", "network",
+                                   "config", "readme", "modem", "serial" };
+    for (const char *s : kSkip)
+        if (SDL_strcasestr(f.c_str(), s)) return true;
+    return false;
+}
+
 /* .BAT first: installers habitually leave a one-line batch file that sets up
  * the environment the .EXE expects, and running the .EXE directly then fails
  * in ways that look like emulation bugs. */
 void find_runnable(const std::string &dir, Game &g)
 {
+    /* A conf shipped with the game wins over anything guessed from the
+     * directory listing. */
+    g.autoexec = bundled_autoexec(dir);
+    if (!g.autoexec.empty()) {
+        g.run = "game profile";     /* label only; the conf drives the launch */
+        return;
+    }
+
     int n = 0;
     char **files = SDL_GlobDirectory(dir.c_str(), NULL, SDL_GLOB_CASEINSENSITIVE, &n);
     if (!files) return;
-    std::string bat, com, exe;
+
+    std::string bat, com, exe, fallback_bat;
     for (int i = 0; i < n; ++i) {
         const std::string f = files[i];
-        if      (bat.empty() && ends_with_ci(f, ".bat")) bat = f;
+        if (ends_with_ci(f, ".bat")) {
+            /* "run.bat"/"start.bat" beat an alphabetically earlier helper. */
+            const bool preferred = SDL_strcasestr(f.c_str(), "run") ||
+                                   SDL_strcasestr(f.c_str(), "start") ||
+                                   SDL_strcasestr(f.c_str(), "play");
+            if (is_support_script(f)) { if (fallback_bat.empty()) fallback_bat = f; }
+            else if (bat.empty() || preferred) { if (preferred || bat.empty()) bat = f; }
+        }
         else if (com.empty() && ends_with_ci(f, ".com")) com = f;
-        else if (exe.empty() && ends_with_ci(f, ".exe")) exe = f;
+        else if (exe.empty() && ends_with_ci(f, ".exe") && !is_support_script(f)) exe = f;
     }
     SDL_free(files);
+
+    if (bat.empty()) bat = fallback_bat;
     g.run = !bat.empty() ? bat : (!com.empty() ? com : exe);
 }
 
@@ -557,8 +643,13 @@ int main(int argc, char **argv)
         Settings s = cfg.defaults;
         retrodos::load_game_settings(games_dir, g.name, s);  /* overrides win */
         active = s;
-        const std::string conf = retrodos::build_conf(s, g.name, g.dir, g.run,
-                                                      g.run_raw);
+        /* A conf shipped with the game states how it starts; use it verbatim
+         * rather than the guessed program name. */
+        const bool use_profile = !g.autoexec.empty();
+        const std::string conf = retrodos::build_conf(
+            s, g.name, g.dir,
+            use_profile ? g.autoexec : g.run,
+            use_profile ? true : g.run_raw);
         if (SDL_IOStream *io = SDL_IOFromFile(conf_path.c_str(), "w")) {
             SDL_WriteIO(io, conf.data(), conf.size());
             SDL_CloseIO(io);
