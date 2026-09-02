@@ -116,6 +116,41 @@ std::vector<std::string> saf_list_games(void)
     return out;
 }
 
+void saf_pick_game(const std::string &dest_root)
+{
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    if (!env) return;
+    jclass cls = find_bridge(env);
+    if (!cls) return;
+
+    jmethodID m = env->GetStaticMethodID(cls, "pickGame", "(Ljava/lang/String;)V");
+    if (!m) { env->ExceptionClear(); env->DeleteLocalRef(cls); return; }
+
+    jstring jd = env->NewStringUTF(dest_root.c_str());
+    env->CallStaticVoidMethod(cls, m, jd);
+    if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
+    env->DeleteLocalRef(jd);
+    env->DeleteLocalRef(cls);
+}
+
+std::string saf_install_status(void)
+{
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    if (!env) return std::string();
+    jclass cls = find_bridge(env);
+    if (!cls) return std::string();
+
+    jmethodID m = env->GetStaticMethodID(cls, "installStatus", "()Ljava/lang/String;");
+    if (!m) { env->ExceptionClear(); env->DeleteLocalRef(cls); return std::string(); }
+
+    jstring js = (jstring)env->CallStaticObjectMethod(cls, m);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); }
+    std::string out = jstring_to_std(env, js);
+    if (js) env->DeleteLocalRef(js);
+    env->DeleteLocalRef(cls);
+    return out;
+}
+
 bool saf_stage_game(const std::string &name, const std::string &dest_dir)
 {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
@@ -147,6 +182,8 @@ bool saf_has_grant(void) { return false; }
 std::string saf_tree_uri(void) { return std::string(); }
 std::vector<std::string> saf_list_games(void) { return {}; }
 bool saf_stage_game(const std::string &, const std::string &) { return false; }
+void saf_pick_game(const std::string &) {}
+std::string saf_install_status(void) { return std::string(); }
 } /* namespace retrodos */
 
 #endif

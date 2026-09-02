@@ -31,6 +31,13 @@ std::vector<std::string> saf_list_games(void);
  * dest_dir already holds files, so relaunching costs nothing. */
 bool saf_stage_game(const std::string &name, const std::string &dest_dir);
 
+/** Ask the user for one game file and install it into [dest_root]. Returns
+ *  immediately; watch saf_install_status() for the outcome. */
+void saf_pick_game(const std::string &dest_root);
+
+/** Progress of the last saf_pick_game(), or empty when nothing is happening. */
+std::string saf_install_status(void);
+
 } /* namespace retrodos */
 
 #endif

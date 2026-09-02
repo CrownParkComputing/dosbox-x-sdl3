@@ -24,6 +24,7 @@ class MainActivity : SDLActivity() {
 
     companion object {
         private const val REQ_PICK_FOLDER = 0x5AF0
+        private const val REQ_PICK_GAME   = 0x5AF1
     }
 
     override fun getLibraries(): Array<String> = arrayOf("SDL3", "retrodos")
@@ -62,7 +63,21 @@ class MainActivity : SDLActivity() {
         startActivityForResult(i, REQ_PICK_FOLDER)
     }
 
+    /** A single game -- an archive or a bare DOS executable -- to copy in. */
+    fun launchGamePicker() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivityForResult(i, REQ_PICK_GAME)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_PICK_GAME) {
+            if (resultCode == Activity.RESULT_OK) data?.data?.let { SafBridge.onGamePicked(it) }
+            return
+        }
         if (requestCode == REQ_PICK_FOLDER) {
             if (resultCode == Activity.RESULT_OK) data?.data?.let { SafBridge.onFolderPicked(it) }
             return

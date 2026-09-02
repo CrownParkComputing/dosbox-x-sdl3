@@ -149,6 +149,105 @@ object SafBridge {
     }
 
     /* ---------------------------------------------------------------- */
+    /* Add one game                                                      */
+    /* ---------------------------------------------------------------- */
+
+    /* Where the picked game should be installed, remembered across the trip
+     * through the system file picker. */
+    @Volatile private var installDest: String = ""
+
+    /* Progress, polled by native code once a frame. Empty means idle. */
+    @Volatile private var installStatus: String = ""
+
+    @JvmStatic fun installStatus(): String = installStatus
+
+    /**
+     * Ask for a single game and install it.
+     *
+     * Separate from the folder grant: that says "my collection lives there",
+     * this says "add this one thing". A collection is browsed where it sits,
+     * but one game the user picked is copied in, so it behaves exactly like a
+     * downloaded title afterwards -- a real directory the emulator can mount.
+     */
+    @JvmStatic
+    fun pickGame(destRoot: String) {
+        val a = activity ?: return
+        installDest = destRoot
+        installStatus = ""
+        a.runOnUiThread { a.launchGamePicker() }
+    }
+
+    /** Called by MainActivity once the user has chosen a file. */
+    @JvmStatic
+    fun onGamePicked(uri: Uri) {
+        val c = ctx() ?: return
+        val dest = installDest
+        if (dest.isEmpty()) return
+
+        installStatus = "Installing..."
+        Thread {
+            try {
+                val doc = DocumentFile.fromSingleUri(c, uri)
+                val display = doc?.name ?: "game"
+                /* Folder name is the archive's, minus its extension: that is
+                 * what the user will see in the library. */
+                val base = display.substringBeforeLast('.')
+                    .replace(Regex("[\\p{Cntrl}/\\\\:*?\"<>|]"), "_").trim()
+                val out = File(dest, base.ifEmpty { "game" })
+                out.mkdirs()
+
+                if (display.endsWith(".zip", true)) {
+                    c.contentResolver.openInputStream(uri)?.use { raw ->
+                        java.util.zip.ZipInputStream(raw.buffered(64 * 1024)).use { zin ->
+                            while (true) {
+                                val e = zin.nextEntry ?: break
+                                val target = File(out, e.name)
+                                /* Reject entries that escape the folder. */
+                                if (!target.canonicalPath.startsWith(
+                                        out.canonicalPath + File.separator)) {
+                                    zin.closeEntry(); continue
+                                }
+                                if (e.isDirectory) target.mkdirs()
+                                else {
+                                    target.parentFile?.mkdirs()
+                                    target.outputStream().use { zin.copyTo(it, 64 * 1024) }
+                                }
+                                zin.closeEntry()
+                            }
+                        }
+                    }
+                    flattenSingle(out)
+                } else {
+                    /* A bare .EXE or .COM is a game too; drop it in a folder of
+                     * its own so it has somewhere to be mounted from. */
+                    c.contentResolver.openInputStream(uri)?.use { input ->
+                        File(out, display).outputStream().use { input.copyTo(it, 64 * 1024) }
+                    }
+                }
+                Log.i(TAG, "installed '$display' -> ${out.absolutePath}")
+                installStatus = "Added $base"
+            } catch (e: Exception) {
+                Log.w(TAG, "install failed: $e")
+                installStatus = "Could not add that file: ${e.message}"
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** Lift a lone wrapper directory up, so the runnable sits at the mount
+     *  point rather than one level below it. */
+    private fun flattenSingle(dir: File) {
+        repeat(3) {
+            val kids = dir.listFiles() ?: return
+            if (kids.size != 1 || !kids[0].isDirectory) return
+            val inner = kids[0]
+            for (f in inner.listFiles() ?: return) {
+                if (!f.renameTo(File(dir, f.name))) return
+            }
+            inner.delete()
+        }
+    }
+
+    /* ---------------------------------------------------------------- */
     /* Stage                                                             */
     /* ---------------------------------------------------------------- */
 

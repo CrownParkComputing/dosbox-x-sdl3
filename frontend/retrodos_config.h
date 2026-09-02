@@ -35,8 +35,18 @@ struct Settings {
     /* sbpro2 is the safest broad default for the DOS era. */
     std::string sbtype       = "sbpro2";
 
-    /* DOS modes are frequently non-square-pixel: 320x200 is a 4:3 picture. */
+    /* DOS modes are frequently non-square-pixel: 320x200 is a 4:3 picture, not
+     * 16:10. Kept for configs written before aspect_mode existed. */
     bool        aspect_correct = true;
+
+    /* How the picture is fitted to the screen:
+     *   0 Auto  -- the ratio the engine reports for the current video mode
+     *   1 4:3   -- force it, for a mode the engine describes badly
+     *   2 16:9  -- fill a widescreen handheld, geometry be damned
+     *   3 Fill  -- stretch to the window exactly
+     * Auto is right almost always; the rest exist because "almost" is not
+     * "always" and the player is the one looking at it. */
+    int         aspect_mode = 0;
     /* Integer scaling is sharper but leaves bigger borders on a handheld. */
     bool        integer_scale  = false;
 
@@ -68,6 +78,7 @@ struct Settings {
         return cycles_max == o.cycles_max && cycles_fixed == o.cycles_fixed &&
                core_dynamic == o.core_dynamic && memsize == o.memsize &&
                sbtype == o.sbtype && aspect_correct == o.aspect_correct &&
+               aspect_mode == o.aspect_mode &&
                integer_scale == o.integer_scale &&
                pad_sends_keys == o.pad_sends_keys &&
                pad_sends_joystick == o.pad_sends_joystick &&

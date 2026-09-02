@@ -73,6 +73,7 @@ void append_settings(std::string &s, const Settings &v)
     s += "sbtype=";         s += v.sbtype;                     s += "\n";
     s += "aspect_correct="; s += v.aspect_correct ? "1" : "0"; s += "\n";
     s += "integer_scale=";  s += v.integer_scale ? "1" : "0";  s += "\n";
+    s += "aspect_mode=";    s += std::to_string(v.aspect_mode);   s += "\n";
     s += "pad_sends_keys=";     s += v.pad_sends_keys ? "1" : "0";     s += "\n";
     s += "pad_sends_joystick="; s += v.pad_sends_joystick ? "1" : "0"; s += "\n";
     s += "onscreen_pad=";       s += v.onscreen_pad ? "1" : "0";       s += "\n";
@@ -95,6 +96,10 @@ void read_settings(const std::map<std::string, std::string> &kv, Settings &v)
     v.sbtype         = as_str (kv, "sbtype", v.sbtype);
     v.aspect_correct = as_bool(kv, "aspect_correct", v.aspect_correct);
     v.integer_scale  = as_bool(kv, "integer_scale", v.integer_scale);
+    /* Migration: a config written before aspect_mode existed expressed "do not
+     * correct" as aspect_correct=0, which is what Fill now means. */
+    v.aspect_mode    = as_int (kv, "aspect_mode",
+                               v.aspect_correct ? v.aspect_mode : 3);
     v.pad_sends_keys     = as_bool(kv, "pad_sends_keys", v.pad_sends_keys);
     v.pad_sends_joystick = as_bool(kv, "pad_sends_joystick", v.pad_sends_joystick);
     v.onscreen_pad       = as_bool(kv, "onscreen_pad", v.onscreen_pad);

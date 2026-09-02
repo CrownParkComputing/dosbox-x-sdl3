@@ -515,10 +515,25 @@ SDL_FRect fit(int fb_w, int fb_h, int aspect_x1000, int win_w, int win_h,
               const Settings &s)
 {
     /* DOS modes are frequently non-square-pixel: 320x200 is a 4:3 picture, not
-     * 16:10. Ignoring the ratio the engine reports is the classic
-     * DOS-emulator tell. */
-    double ratio = (fb_h > 0) ? ((double)fb_w / (double)fb_h) : (4.0 / 3.0);
-    if (s.aspect_correct && aspect_x1000 > 0) ratio = aspect_x1000 / 1000.0;
+     * 16:10. Ignoring the ratio the engine reports is the classic DOS-emulator
+     * tell -- but "Auto" is not always what the player wants on a widescreen
+     * handheld, which is why the other modes exist. */
+    double ratio;
+    switch (s.aspect_mode) {
+    case 1:  ratio = 4.0 / 3.0;  break;
+    case 2:  ratio = 16.0 / 9.0; break;
+    case 3:                       /* Fill: no letterboxing at all */
+        {
+            SDL_FRect r;
+            r.x = 0.0f; r.y = 0.0f;
+            r.w = (float)win_w; r.h = (float)win_h;
+            return r;
+        }
+    default:
+        ratio = (aspect_x1000 > 0) ? (aspect_x1000 / 1000.0)
+              : (fb_h > 0 ? ((double)fb_w / (double)fb_h) : (4.0 / 3.0));
+        break;
+    }
     if (ratio <= 0.0) ratio = 4.0 / 3.0;
 
     double w = (double)win_w, h = w / ratio;
@@ -611,18 +626,30 @@ void controls_widgets(Settings &s)
     ImGui::Spacing();
     ImGui::TextUnformatted("Key for each button");
 
-    for (int b = 0; b < retrodos::PAD_COUNT; ++b) {
-        ImGui::PushID(b);
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
-        if (ImGui::BeginCombo(retrodos::pad_button_name(b), key_name(s.pad_keys[b]))) {
-            for (const KeyChoice &k : kKeyChoices) {
-                const bool sel = (s.pad_keys[b] == k.scancode);
-                if (ImGui::Selectable(k.name, sel)) s.pad_keys[b] = k.scancode;
-                if (sel) ImGui::SetItemDefaultFocus();
+    /* Two columns. Fourteen stacked combos do not fit a handheld screen, and a
+     * settings page that scrolls hides half its own controls. */
+    {
+        const float col = (ImGui::GetContentRegionAvail().x - 12.0f) * 0.5f;
+        const int   half = (retrodos::PAD_COUNT + 1) / 2;
+        for (int row = 0; row < half; ++row) {
+            for (int c = 0; c < 2; ++c) {
+                const int b = row + c * half;
+                if (b >= retrodos::PAD_COUNT) break;
+                if (c) ImGui::SameLine(0.0f, 12.0f);
+                ImGui::PushID(b);
+                ImGui::SetNextItemWidth(col - ImGui::GetFontSize() * 4.5f);
+                if (ImGui::BeginCombo(retrodos::pad_button_name(b),
+                                      key_name(s.pad_keys[b]))) {
+                    for (const KeyChoice &k : kKeyChoices) {
+                        const bool sel = (s.pad_keys[b] == k.scancode);
+                        if (ImGui::Selectable(k.name, sel)) s.pad_keys[b] = k.scancode;
+                        if (sel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::PopID();
             }
-            ImGui::EndCombo();
         }
-        ImGui::PopID();
     }
 
     if (ImGui::Button("DOS defaults", ImVec2(0, 0)))
@@ -662,7 +689,13 @@ void settings_widgets(Settings &s)
 
     ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
     ImGui::TextUnformatted("Display");
-    ImGui::Checkbox("Correct aspect ratio", &s.aspect_correct);
+    {
+        static const char *kAspect[] = { "Auto (as the mode intends)", "4:3",
+                                         "16:9", "Fill the screen" };
+        int mode = (s.aspect_mode >= 0 && s.aspect_mode < 4) ? s.aspect_mode : 0;
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16.0f);
+        if (ImGui::Combo("Aspect", &mode, kAspect, 4)) s.aspect_mode = mode;
+    }
     ImGui::Checkbox("Integer scaling (sharper, bigger borders)", &s.integer_scale);
 }
 
@@ -933,6 +966,8 @@ int main(int argc, char **argv)
     int   selected = -1;          /* game index for per-game settings */
     Settings active = cfg.defaults;
     bool  show_overlay = false, show_osk = false;
+    bool  show_controls = false;   /* in-game mapping panel */
+    std::string playing;           /* title of the running game */
     bool  running = true;
 
     auto launch = [&](const Game &in) {
@@ -983,7 +1018,8 @@ int main(int argc, char **argv)
          * rotation, which is when a control has just moved. */
         SDL_GetWindowSizeInPixels(win, &win_w, &win_h);
         /* True when the UI is covering the game and DOS should see nothing. */
-        const bool ui_modal = (view != View::Emulator) || show_overlay || show_osk;
+        const bool ui_modal = (view != View::Emulator) || show_overlay ||
+                              show_osk || show_controls;
 
         /* ImGui is fed events even while the game is in front, because the
          * emulator view carries a small always-visible control strip. Without
@@ -1088,7 +1124,8 @@ int main(int argc, char **argv)
             case SDL_EVENT_FINGER_MOTION:
                 /* Only while the game is in front: elsewhere a finger is a
                  * mouse click on the UI, which ImGui has already had. */
-                if (view == View::Emulator && !show_overlay && !show_osk)
+                if (view == View::Emulator && !show_overlay && !show_osk &&
+                    !show_controls)
                     pad.handle_event(ev, win_w, win_h);
                 break;
 
@@ -1107,6 +1144,7 @@ int main(int argc, char **argv)
          * button every frame would look to DOS like the key repeating at 60Hz,
          * which turns a menu selection into a blur. */
         if (view == View::Emulator) {
+            pad.set_enabled(active.onscreen_pad);
             const unsigned mask = pad.held() | gp_buttons;
             if (mask != pad_prev) {
                 if (active.pad_sends_keys) {
@@ -1432,20 +1470,51 @@ int main(int argc, char **argv)
                 ImGui::EndChild();
 
                 ImGui::SetCursorPos(ImVec2(rail_w + margin * 2.0f, margin));
+                /* Only the Library scrolls -- it is the one page whose length
+                 * is the user's data rather than our layout. Everything else is
+                 * built to fit, and a scrollbar there would be an admission
+                 * that it does not. */
                 ImGui::BeginChild("content",
                                   ImVec2(full.x - rail_w - margin * 3.0f,
                                          full.y - margin * 2.0f),
                                   ImGuiChildFlags_Borders |
-                                  ImGuiChildFlags_AlwaysUseWindowPadding);
+                                  ImGuiChildFlags_AlwaysUseWindowPadding,
+                                  page == Page::Library
+                                      ? 0
+                                      : ImGuiWindowFlags_NoScrollbar |
+                                        ImGuiWindowFlags_NoScrollWithMouse);
 
                 const float cw = ImGui::GetContentRegionAvail().x;
 
                 /* ---- Library ---- */
                 if (page == Page::Library) {
                     ImGui::TextUnformatted("Library");
-                    ImGui::SameLine(cw - ImGui::CalcTextSize("Rescan").x -
-                                    ImGui::GetStyle().FramePadding.x * 4.0f);
-                    if (ImGui::Button("Rescan")) refresh();
+                    {
+                        const float bw2 = ImGui::CalcTextSize("Add game").x +
+                                          ImGui::GetStyle().FramePadding.x * 2.0f;
+                        const float bw3 = ImGui::CalcTextSize("Rescan").x +
+                                          ImGui::GetStyle().FramePadding.x * 2.0f;
+                        ImGui::SameLine(cw - bw2 - bw3 - ImGui::GetStyle().ItemSpacing.x);
+                        if (ImGui::Button("Add game")) retrodos::saf_pick_game(cfg.library_root);
+                        ImGui::SameLine();
+                        if (ImGui::Button("Rescan")) refresh();
+                    }
+
+                    /* The install runs on its own thread, so the result appears
+                     * here rather than being returned by the button. */
+                    {
+                        const std::string st = retrodos::saf_install_status();
+                        if (!st.empty()) {
+                            ImGui::TextDisabled("%s", st.c_str());
+                            static std::string last;
+                            /* Rescan once, when the message changes to a
+                             * finished one -- not every frame. */
+                            if (st != last) {
+                                last = st;
+                                if (st.compare(0, 6, "Added ") == 0) refresh();
+                            }
+                        }
+                    }
                     ImGui::Separator();
 
                     ImGui::SetNextItemWidth(cw * 0.6f);
@@ -1752,7 +1821,8 @@ int main(int argc, char **argv)
                     ImGui::Separator();
 
                     ImGui::BeginChild("##sset",
-                                      ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.6f));
+                                      ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.6f),
+                                      0, ImGuiWindowFlags_NoScrollbar);
                     if (page == Page::Input) controls_widgets(edit);
                     else                     settings_widgets(edit);
                     if (per_game) {
@@ -1852,6 +1922,9 @@ int main(int argc, char **argv)
                 if (ImGui::Button(show_osk ? "Hide keyboard" : "Show keyboard", bw)) {
                     show_osk = !show_osk; show_overlay = false;
                 }
+                if (ImGui::Button("Controls", bw)) {
+                    show_controls = true; show_overlay = false;
+                }
                 if (ImGui::Button("Ctrl+Alt+Del", bw)) {
                     retrodos::osk_send_ctrl_alt_del(); show_overlay = false;
                 }
@@ -1890,13 +1963,50 @@ int main(int argc, char **argv)
                 ImGui::End();
             }
 
+            /* ---------------- In-game control mapping ---------------- */
+            /* Remapping belongs here as much as on the settings page: which
+             * key a button should send is a question you only answer while
+             * looking at the game, and edits apply to the LIVE settings, so a
+             * change can be tried without leaving. */
+            if (view == View::Emulator && show_controls) {
+                ImGui::SetNextWindowPos(ImVec2(full.x * 0.5f, full.y * 0.5f),
+                                        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+                ImGui::SetNextWindowSize(ImVec2(full.x * 0.92f, full.y * 0.86f));
+                ImGui::SetNextWindowBgAlpha(0.94f);
+                ImGui::Begin("Controls", nullptr,
+                             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar);
+
+                ImGui::Text("Controls - %s", playing.empty() ? "this game"
+                                                             : playing.c_str());
+                ImGui::TextDisabled("Changes take effect immediately.");
+                ImGui::Separator();
+
+                ImGui::BeginChild("##ctl",
+                                  ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.6f),
+                                  0, ImGuiWindowFlags_NoScrollbar);
+                controls_widgets(active);
+                ImGui::EndChild();
+
+                if (ImGui::Button("Save for this game")) {
+                    if (!playing.empty())
+                        retrodos::save_game_settings(games_dir, playing, active);
+                    show_controls = false;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Close")) show_controls = false;
+                ImGui::SameLine();
+                ImGui::TextDisabled("Unsaved changes last until the game exits.");
+                ImGui::End();
+            }
+
             /* ---------------- Always-on emulator controls ---------------- */
             /* A handheld has no Escape key and often no usable Back button, so
              * without this the menu and the on-screen keyboard are unreachable
              * once a game is running -- the emulator becomes a one-way trip.
              * Kept small and translucent, and parked in the top-right where DOS
              * games put the least. */
-            if (view == View::Emulator && !show_overlay) {
+            if (view == View::Emulator && !show_overlay && !show_controls) {
                 const float pad = ImGui::GetStyle().WindowPadding.x;
                 ImGui::SetNextWindowPos(ImVec2(full.x - pad, pad),
                                         ImGuiCond_Always, ImVec2(1.0f, 0.0f));
@@ -1915,7 +2025,7 @@ int main(int argc, char **argv)
             /* Under the OSK and the overlay: when either is up the player is
              * not driving the game, and a pad drawn on top of a keyboard is
              * just clutter. */
-            if (view == View::Emulator && !show_osk && !show_overlay)
+            if (view == View::Emulator && !show_osk && !show_overlay && !show_controls)
                 pad.draw(win_w, win_h);
 
             if (view == View::Emulator && show_osk)
