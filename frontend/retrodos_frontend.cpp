@@ -39,7 +39,7 @@
 #include <thread>
 #include <vector>
 
-#if defined(__ANDROID__)
+#if !defined(_WIN32)
 #include <dirent.h>
 #endif
 
@@ -193,6 +193,10 @@ void find_runnable(const std::string &dir, Game &g)
     std::string bat, com, exe, fallback_bat;
     for (int i = 0; i < n; ++i) {
         const std::string f = files[i];
+        /* This glob recurses too. A nested hit is useless here: the name goes
+         * straight into autoexec, where DOS needs a backslash path relative to
+         * the mounted drive, so "DESCENT/DESCENT.BAT" would simply not run. */
+        if (f.find('/') != std::string::npos) continue;
         if (ends_with_ci(f, ".bat")) {
             /* "run.bat"/"start.bat" beat an alphabetically earlier helper. */
             const bool preferred = SDL_strcasestr(f.c_str(), "run") ||
@@ -210,18 +214,39 @@ void find_runnable(const std::string &dir, Game &g)
     g.run = !bat.empty() ? bat : (!com.empty() ? com : exe);
 }
 
+/* A game is a directory directly inside the library root -- one level, never
+ * deeper.
+ *
+ * readdir, NOT SDL_GlobDirectory: the latter RECURSES. With flat test folders
+ * that went unnoticed, but the first real game exposed it -- Descent's own
+ * cd/, DESCENT/, DESCENT/SB16/ and the ~/.config tree DOSBox-X leaves behind
+ * each turned into a separate library entry, so one download produced eight
+ * rows and only the first of them could start. */
 std::vector<Game> scan_library(const std::string &root)
 {
     std::vector<Game> games;
     if (root.empty()) return games;
 
+#if !defined(_WIN32)
+    DIR *d = opendir(root.c_str());
+    if (!d) return games;
+
+    std::vector<std::string> entries;
+    while (struct dirent *e = readdir(d)) entries.push_back(e->d_name);
+    closedir(d);
+
+    for (const std::string &name : entries) {
+        if (name == "." || name == "..") continue;
+#else
     int n = 0;
-    char **entries = SDL_GlobDirectory(root.c_str(), NULL, 0, &n);
-    if (!entries) return games;
+    char **glob = SDL_GlobDirectory(root.c_str(), "*", 0, &n);
+    if (!glob) return games;
 
     for (int i = 0; i < n; ++i) {
-        const std::string name = entries[i];
-        if (name == "." || name == "..") continue;
+        const std::string name = glob[i];
+        if (name == "." || name == ".." ||
+            name.find('/') != std::string::npos) continue;
+#endif
         /* Skip dotfiles and the stray '~' trees DOSBox-X leaves behind when
          * handed a HOME it cannot resolve -- they are not games. */
         if (name[0] == '.' || name[0] == '~') continue;
@@ -239,7 +264,9 @@ std::vector<Game> scan_library(const std::string &root)
         g.initial = (c >= 'A' && c <= 'Z') ? c : '#';
         games.push_back(g);
     }
-    SDL_free(entries);
+#if defined(_WIN32)
+    SDL_free(glob);
+#endif
 
     std::sort(games.begin(), games.end(), [](const Game &a, const Game &b) {
         return SDL_strcasecmp(a.name.c_str(), b.name.c_str()) < 0;
