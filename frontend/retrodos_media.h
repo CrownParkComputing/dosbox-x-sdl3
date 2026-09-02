@@ -65,6 +65,18 @@ struct MediaResult {
 /** False on platforms with no client, so the UI can hide the media pages. */
 bool media_available(void);
 
+/**
+ * Whether GAME downloads may be offered at all on this platform.
+ *
+ * Separate from media_available() and deliberately stricter. Artwork is
+ * metadata about software the user already owns; shipping a storefront for the
+ * games themselves is a different proposition, and on iOS it is one the App
+ * Store does not allow. The account's isAdmin flag is a permission check, this
+ * is a platform one -- and a permission check is no substitute, because an
+ * administrator signing in on iOS must still not see it.
+ */
+bool media_downloads_available(void);
+
 /* Each begins one operation; exactly one MediaResult follows per call. */
 void media_begin_status(void);
 void media_begin_login(const std::string &email, const std::string &password);

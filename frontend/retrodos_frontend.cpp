@@ -1203,7 +1203,10 @@ int main(int argc, char **argv)
                          * what persists. Do not leave it sitting in a buffer. */
                         SDL_memset(m_pass, 0, sizeof(m_pass));
                         SDL_memset(m_key,  0, sizeof(m_key));
-                        if (media_msg.empty()) media_msg = "Signed in as " + account.email;
+                        /* No "signed in" banner: the Artwork page states the
+                         * account directly below, and saying it twice reads as
+                         * a bug. Only a FAILURE needs a message here. */
+                        if (mr.ok) media_msg.clear();
                     }
                     break;
 
@@ -1454,10 +1457,13 @@ int main(int argc, char **argv)
                 nav("Library", Page::Library);
                 if (retrodos::media_available()) {
                     nav("Artwork", Page::Artwork);
-                    /* Downloads is admin-only server-side, so showing it to
-                     * everyone would advertise something most accounts cannot
-                     * do. */
-                    if (account.signed_in && account.is_admin)
+                    /* Two independent gates. The platform one comes first and
+                     * is absolute: an App Store build must not offer game
+                     * downloads at all, however the account is privileged. The
+                     * admin one then reflects what the server would allow, so
+                     * the rail never advertises something that would fail. */
+                    if (retrodos::media_downloads_available() &&
+                        account.signed_in && account.is_admin)
                         nav("Downloads", Page::Downloads);
                 }
                 nav("Machine",  Page::Settings);
@@ -1712,6 +1718,13 @@ int main(int argc, char **argv)
 
                 /* ---- Downloads (admin) ---- */
                 else if (page == Page::Downloads) {
+                    /* The page can outlive its own preconditions: signing out
+                     * while it is open would otherwise leave a download button
+                     * on screen that the server will refuse. */
+                    if (!retrodos::media_downloads_available() ||
+                        !account.signed_in || !account.is_admin) {
+                        page = Page::Library;
+                    }
                     ImGui::TextUnformatted("Downloads");
                     ImGui::Separator();
 

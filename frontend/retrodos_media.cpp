@@ -224,6 +224,9 @@ std::string call_string(const char *name)
 
 bool media_available(void) { return true; }
 
+/* Android only. An iOS build compiles the stubs below, where this is false. */
+bool media_downloads_available(void) { return true; }
+
 void media_begin_status(void) { call_strings("beginStatus", nullptr, 0); }
 void media_begin_logout(void) { call_strings("beginLogout", nullptr, 0); }
 
@@ -279,6 +282,7 @@ namespace retrodos {
  * media_available() being false keeps the pages hidden rather than showing
  * controls that would silently do nothing. */
 bool media_available(void) { return false; }
+bool media_downloads_available(void) { return false; }
 
 void media_begin_status(void) {}
 void media_begin_login(const std::string &, const std::string &) {}
