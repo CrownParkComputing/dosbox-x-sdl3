@@ -190,7 +190,23 @@ Bitu OUTPUT_GAMELINK_SetSize()
     //        Free the buffer and reallocate on size change. Look at the OpenGL output
     //        code for a good example.
     if (!sdl.gamelink.framebuf) {
-        sdl.gamelink.framebuf = malloc(SCALER_MAXWIDTH * SCALER_MAXHEIGHT * 4);   // 32 bit color frame buffer
+        /* calloc, not malloc.
+         *
+         * The renderer only ever writes the area the CURRENT video mode
+         * occupies, and a consumer reads pitch*height from the start of this
+         * buffer -- so every byte outside that area is shown as picture. From
+         * malloc that is uninitialised heap, which arrives on screen as bands
+         * of coloured noise and reads as a corrupted emulator rather than an
+         * uncleared allocation. */
+        sdl.gamelink.framebuf = calloc(1, SCALER_MAXWIDTH * SCALER_MAXHEIGHT * 4);   // 32 bit color frame buffer
+    }
+    else {
+        /* And clear it again on every mode change. A 640x480 mode following a
+         * 720x400 one leaves the old mode's pixels in the rows and columns the
+         * new one does not reach; DOS software changes mode constantly --
+         * Windows 98 Setup alone goes 720x400 text, then 640x480 graphics --
+         * so this is the common case, not an edge one. */
+        memset(sdl.gamelink.framebuf, 0, SCALER_MAXWIDTH * SCALER_MAXHEIGHT * 4);
     }
     sdl.gamelink.pitch = sdl.draw.width*4;
 
