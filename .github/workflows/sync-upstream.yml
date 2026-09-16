@@ -21,7 +21,7 @@ on:
 
 permissions:
   contents: write
-  issues: write
+  # issues: write is deliberately absent - see the "Flag it" step
 
 env:
   UPSTREAM_URL: https://github.com/joncampbell123/dosbox-x.git
@@ -77,28 +77,34 @@ jobs:
           git merge --abort >/dev/null 2>&1 || true
 
       - name: Flag it
+        # The flag is a job summary plus a deliberately failed run.
+        #
+        # An issue would read better, but GITHUB_TOKEN cannot create issues in a
+        # forked repository no matter what `permissions:` says, and these core
+        # repos are all forks. Rather than park a personal access token in six
+        # repos to work around that, the run itself carries the signal: GitHub
+        # emails the owner when a scheduled workflow fails, the Actions tab shows
+        # red, and the summary below has the detail. Green means "level with
+        # upstream"; red means "upstream moved, go and look".
         if: steps.gap.outputs.clean != 'uptodate'
         env:
-          GH_TOKEN: ${{ github.token }}
           AHEAD: ${{ steps.gap.outputs.ahead }}
           TIP: ${{ steps.gap.outputs.tip }}
           OURS: ${{ steps.gap.outputs.ours }}
           CLEAN: ${{ steps.gap.outputs.clean }}
-          TITLE: 'Upstream moved: core is behind ${{ github.event.repository.name }} upstream'
         run: |
           {
+            echo "## Upstream moved"
+            echo
             echo "\`$INTEGRATION_BRANCH\` (\`$OURS\`) is **$AHEAD commits behind** upstream \`$UPSTREAM_BRANCH\` (\`$TIP\`)."
             echo
-            echo "Mirror branch \`$MIRROR_BRANCH\`: $MIRROR_STATE"
-            echo
+            echo "- Mirror branch \`$MIRROR_BRANCH\`: $MIRROR_STATE"
             if [ "$CLEAN" = "yes" ]; then
-              echo "A test merge of upstream into \`$INTEGRATION_BRANCH\` applies **cleanly**."
+              echo "- Test merge into \`$INTEGRATION_BRANCH\`: **clean**"
             else
-              echo "A test merge **conflicts** with our patches in:"
+              echo "- Test merge into \`$INTEGRATION_BRANCH\`: **conflicts**, in:"
               echo
-              echo '```'
-              cat /tmp/conflicts.txt
-              echo '```'
+              sed 's/^/      - `/; s/$/`/' /tmp/conflicts.txt
             fi
             echo
             echo "<details><summary>New upstream commits (first 40)</summary>"
@@ -109,15 +115,25 @@ jobs:
             echo
             echo "</details>"
             echo
-            echo "To take it: \`git merge $MIRROR_BRANCH\` on \`$INTEGRATION_BRANCH\`, rebuild the core for"
-            echo "linux/android/ios, then bump the \`core\` submodule in the app repos that consume it."
-          } > /tmp/body.md
-          existing=$(gh issue list --state open --search "in:title \"Upstream moved\"" --json number,title \
-            --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
-          if [ -n "$existing" ]; then
-            gh issue edit "$existing" --body-file /tmp/body.md
-            echo "Updated issue #$existing"
-          else
-            gh issue create --title "$TITLE" --body-file /tmp/body.md --label upstream 2>/dev/null \
-              || gh issue create --title "$TITLE" --body-file /tmp/body.md
-          fi
+            echo "### Taking it"
+            echo
+            echo '```'
+            echo "git fetch upstream $UPSTREAM_BRANCH"
+            echo "git checkout $INTEGRATION_BRANCH"
+            echo "git merge upstream/$UPSTREAM_BRANCH"
+            echo '```'
+            echo
+            echo "Then rebuild the core for linux/android/ios and bump the \`core\`"
+            echo "submodule in the app repos that consume it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error title=Upstream moved::$AHEAD commits behind upstream ($TIP). Test merge: $CLEAN. See the job summary."
+          exit 1
+
+      - name: Level with upstream
+        if: steps.gap.outputs.clean == 'uptodate'
+        run: |
+          echo "## Level with upstream" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$INTEGRATION_BRANCH\` carries every commit on upstream \`$UPSTREAM_BRANCH\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Mirror branch \`$MIRROR_BRANCH\`: $MIRROR_STATE" >> "$GITHUB_STEP_SUMMARY"
