@@ -5711,7 +5711,10 @@ void MAPPER_Init(void) {
     for (CButton_it but_it = buttons.begin(); but_it != buttons.end(); ++but_it) {
         (*but_it)->BindColor();
     }
-    if (SDL_GetModState()&KMOD_CAPS) {
+    /* Guarded because CreateLayout(), which assigns these, runs only when
+     * `buttons` is empty -- so an embedded second run can legitimately reach
+     * here with neither event rebuilt. */
+    if (caps_lock_event && (SDL_GetModState()&KMOD_CAPS)) {
         for (CBindList_it bit=caps_lock_event->bindlist.begin();bit!=caps_lock_event->bindlist.end();++bit) {
 #if SDL_VERSION_ATLEAST(1, 2, 14)
             (*bit)->ActivateBind(32767,true,false);
@@ -5721,7 +5724,7 @@ void MAPPER_Init(void) {
 #endif
         }
     }
-    if (SDL_GetModState()&KMOD_NUM) {
+    if (num_lock_event && (SDL_GetModState()&KMOD_NUM)) {
         for (CBindList_it bit=num_lock_event->bindlist.begin();bit!=num_lock_event->bindlist.end();++bit) {
 #if SDL_VERSION_ATLEAST(1, 2, 14)
             (*bit)->ActivateBind(32767,true,false);
@@ -6029,6 +6032,20 @@ void MAPPER_Shutdown() {
     }
     name_to_events.clear();
     events.clear();
+
+    /* These two point INTO events, which has just been deleted.
+     *
+     * Every other pointer this function frees is nulled as it goes; these were
+     * missed, and on a second MAPPER_Init() in the same process the caps/num
+     * lock startup-state loop below dereferences them. It is a segfault inside
+     * MAPPER_Init with no message, which looks like the mapper failing to
+     * start rather than the previous session failing to finish.
+     *
+     * CreateLayout() reassigns both, but only when `buttons` is empty -- so
+     * nulling here is what makes the guards in MAPPER_Init correct rather than
+     * merely lucky. */
+    caps_lock_event = NULL;
+    num_lock_event = NULL;
 
     for (size_t i=0;i < buttons.size();i++) {
         if (buttons[i] != NULL) {
