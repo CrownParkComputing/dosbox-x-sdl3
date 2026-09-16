@@ -64,6 +64,9 @@ void MAPPER_AutoType(std::vector<std::string> &sequence, const uint32_t wait_ms,
                      const uint32_t pace_ms, bool choice);
 void MAPPER_CheckEvent(SDL_Event *event);
 
+/* Defined in sdlmain.cpp. See the note in the MouseMove case below. */
+extern "C++" { extern bool user_cursor_locked; }
+
 namespace {
 
 /* ------------------------------------------------------------------ */
@@ -179,10 +182,35 @@ extern "C" void retrodos_host_pump(void)
             break;
 
         case Request::MouseMove:
+            /*
+             * Tell the engine the pointer is captured, because for a relative
+             * delta it always is.
+             *
+             * user_cursor_locked is DOSBox-X's "I have grabbed the mouse"
+             * flag, and it gates every relative-motion device there is:
+             * KEYBOARD_AUX_Event throws the movement away without it, and so
+             * do the serial mouse and the INT 33h mickey accumulators. It is
+             * set in exactly one place upstream -- sdlmain's own SDL motion
+             * handler, from its own capture state -- and that handler never
+             * runs here, because the host owns the window. So it was false for
+             * ever.
+             *
+             * The symptom is oddly specific and was hard to read: buttons work
+             * and motion does not, because the button fields are assigned
+             * outside that guard. A guest OS draws a cursor that clicks where
+             * it sits and will not move.
+             *
+             * A relative delta only exists when the host has the pointer, so
+             * asserting it here is simply true rather than a workaround.
+             */
+            user_cursor_locked = true;
             Mouse_CursorMoved((float)r.a, (float)r.b, 0, 0, true);
             break;
 
         case Request::MousePos: {
+            /* Absolute placement is the opposite case: the pointer is NOT
+             * captured, and the engine positions its cursor directly. */
+            user_cursor_locked = false;
             /* A PS/2 mouse is relative, so "put it here" is steering, not
              * teleporting. Convert against the current frame size. */
             const int w = g_fb_w.load(), h = g_fb_h.load();
