@@ -178,6 +178,30 @@ RETRODOS_HOST_API int retrodos_host_unmount(char drive);
  * Goes through the same keyboard buffer as real typing. */
 RETRODOS_HOST_API int retrodos_host_send_command(const char *line);
 
+/* ---- Changing a disc in a machine that is already running ----
+ *
+ * The three functions above type at the DOS shell, which means they work only
+ * while a DOS shell is what is running. Once a guest OS has been booted --
+ * Windows 98 from a hard disk image, say -- the shell is gone and typing
+ * "imgmount" simply sends those letters to Windows.
+ *
+ * These two do the same thing DOSBox-X's own "change CD image" and "change
+ * floppy image" menu items do, which is to change the media behind the
+ * emulated drive and tell the guest that it changed. They work whether or not
+ * a guest OS is booted, which is the entire point of them.
+ *
+ * Both take a HOST path, and both return 0 on success. Failure means the
+ * image could not be opened, or that there is no drive of that kind to put it
+ * in -- a machine booted with no CD-ROM attached cannot grow one, because the
+ * guest's own drivers were loaded for the hardware it found at boot. */
+
+/* Put a CD image (ISO/CUE/BIN/CHD...) into the drive at [drive]. Passing NULL
+ * or an empty path opens the drive and leaves it empty. */
+RETRODOS_HOST_API int retrodos_host_insert_cd(char drive, const char *image_path);
+
+/* Put a floppy image into drive 'A' or 'B'. As above, an empty path ejects. */
+RETRODOS_HOST_API int retrodos_host_insert_floppy(char drive, const char *image_path);
+
 /* ------------------------------------------------------------------ */
 /* Status                                                              */
 /* ------------------------------------------------------------------ */

@@ -40,6 +40,8 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <cctype>
+#include <cstdio>
 
 #include "SDL.h"
 #if defined(__ANDROID__)
@@ -53,6 +55,8 @@
 #include "joystick.h"
 #include "render.h"
 #include "dos_inc.h"
+#include "bios_disk.h"
+#include "../dos/drives.h"
 
 /* DOSBox-X entry point, exported by sdlmain.cpp for embedders. */
 extern "C" int dosbox_x_main(int argc, char *argv[]);
@@ -66,6 +70,16 @@ void MAPPER_CheckEvent(SDL_Event *event);
 
 /* Defined in sdlmain.cpp. See the note in the MouseMove case below. */
 extern "C++" { extern bool user_cursor_locked; }
+
+/* True while a guest OS owns the machine, i.e. there is no DOS shell.
+ *
+ * These three, and the swap list below, are declared here rather than pulled
+ * from a header because that is how the rest of the engine reaches them --
+ * and they must be at file scope: inside the anonymous namespace below they
+ * would quietly become separate, undefined internal symbols. */
+extern bool    dos_kernel_disabled;
+extern int32_t swapPosition;
+extern int     swapInDisksSpecificDrive;
 
 namespace {
 
@@ -90,7 +104,7 @@ int                   g_fb_pitch_px = 0;
 struct Request {
     enum Kind {
         Quit, Reset, Key, MouseMove, MousePos, MouseButton, MouseWheel,
-        Joystick, Command
+        Joystick, Command, InsertCd, InsertFloppy
     } kind;
     int         a = 0, b = 0, c = 0, d = 0;
     bool        flag = false;
@@ -107,6 +121,183 @@ void queue(const Request &r)
      * without bound; dropping the oldest is better than dying. */
     if (g_requests.size() > 4096) g_requests.pop_front();
     g_requests.push_back(r);
+}
+
+/* ------------------------------------------------------------------ */
+/* Changing a disc under a running machine                             */
+/* ------------------------------------------------------------------ */
+/*
+ * This is DOSBox-X's own "change CD image" / "change floppy image", with the
+ * file dialog taken out.
+ *
+ * MenuBrowseCDImage() and MenuBrowseFDImage() in src/dos/dos_programs.cpp are
+ * the originals and are the reference for every decision below -- they are
+ * also the only paths in the engine that change media while a guest OS is
+ * booted, which is the case this exists for. They cannot simply be called:
+ * each opens tinyfd_openFileDialog() to ask for the filename, and an embedded
+ * host has nothing to answer that with. The host supplies the path instead.
+ *
+ * Both run on the emulator thread, from the pump, because they touch Drives[],
+ * imageDiskList[] and the IDE controller.
+ *
+ * The comment upstream leaves at the top of the IMGMOUNT menu path is worth
+ * repeating here: "it would be better to have an internal API for mounting ISO
+ * images and replacement. Running a command line to run IMGMOUNT is THE
+ * primary reason we cannot provide this menu command while running a guest
+ * OS." This is that internal API, for the two cases a host actually needs.
+ */
+
+/*
+ * Is this file something an emulated CD-ROM could read?
+ *
+ * Needed because the booted-guest path below swaps the filename behind a live
+ * isoDrive rather than constructing a new one, and setFileName() does not
+ * check. Without this, inserting a path that does not exist reported success,
+ * fired a media change, and left the guest staring at a drive with nothing
+ * readable in it -- which looks like a broken emulator, not a bad path.
+ *
+ * A CD001 descriptor at sector 16 is the ISO 9660 signature. Container
+ * formats that are not raw ISO (cue sheets, CHD) are accepted on the strength
+ * of opening, because their contents are the image loader's business.
+ */
+bool looks_like_cd_image(const std::string &path)
+{
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) return false;
+
+    const size_t dot = path.find_last_of('.');
+    std::string ext = (dot == std::string::npos) ? std::string() : path.substr(dot + 1);
+    for (char &c : ext) c = (char)tolower((unsigned char)c);
+
+    bool ok = true;
+    if (ext == "iso" || ext == "bin" || ext == "img") {
+        char sig[5] = {0};
+        ok = (fseek(f, 16 * 2048 + 1, SEEK_SET) == 0 &&
+              fread(sig, 1, 5, f) == 5 &&
+              std::memcmp(sig, "CD001", 5) == 0);
+    }
+    fclose(f);
+    return ok;
+}
+
+bool change_cd(int drive_letter, const std::string &path)
+{
+    const int d = drive_letter - 'A';
+    if (d < 0 || d >= DOS_DRIVES) return false;
+
+    isoDrive *cdrom = dynamic_cast<isoDrive *>(Drives[d]);
+    if (cdrom == NULL) {
+        /* No CD-ROM there to put a disc in. Refused rather than created: the
+         * guest's drivers bound to the hardware it found when it booted, and a
+         * drive that appears afterwards is one Windows will not see anyway. */
+        LOG_MSG("retrodos: drive %c is not a CD-ROM", (char)drive_letter);
+        return false;
+    }
+
+    const bool empty = std::string(Drives[d]->GetInfo() + 9) == "empty";
+
+    if (path.empty()) {
+        /* Ejecting is inserting nothing. isoDrive treats a path it cannot open
+         * as an empty drive, which is exactly the open-tray state. */
+        cdrom->setFileName("");
+        DriveManager::ChangeDisk(d, cdrom);
+        return true;
+    }
+
+    if (!looks_like_cd_image(path)) {
+        LOG_MSG("retrodos: %s did not open as a CD image", path.c_str());
+        return false;
+    }
+
+    std::vector<std::string> options;
+    int error = -1;
+    const uint8_t mediaid = 0xF8;
+
+    if (dos_kernel_disabled && !empty) {
+        /* The guest is running and the drive already holds a disc: swap the
+         * file behind the existing drive object rather than replacing it.
+         * Replacing it would invalidate the pointer the IDE controller holds. */
+        cdrom->setFileName(path.c_str());
+    } else {
+        DOS_Drive *made = new isoDrive((char)drive_letter, path.c_str(),
+                                       mediaid, error, options);
+        if (error) {
+            delete made;
+            LOG_MSG("retrodos: %s did not open as a CD image", path.c_str());
+            return false;
+        }
+        cdrom = dynamic_cast<isoDrive *>(made);
+        Drives[d] = cdrom;
+    }
+
+    /* The part that tells the guest. Without it Windows keeps reading the
+     * directory it cached from the previous disc. */
+    if (cdrom) DriveManager::ChangeDisk(d, cdrom);
+    return true;
+}
+
+bool change_floppy(int drive_letter, const std::string &path)
+{
+    const int d = drive_letter - 'A';
+    if (d < 0 || d > 1) return false;   /* A: and B:, as the BIOS has */
+
+    if (path.empty()) {
+        /* There is no "no disk" image to load, and an emulated drive with
+         * nothing in it is what imageDiskList == NULL already means. */
+        if (imageDiskList[d]) {
+            imageDiskList[d]->Release();
+            imageDiskList[d] = NULL;
+            imageDiskChange[d] = true;
+        }
+        return true;
+    }
+
+    std::vector<std::string> options;
+    fatDrive *made = new fatDrive(path.c_str(), 0, 0, 0, 0, options);
+    if (!made->created_successfully) {
+        delete made;
+        LOG_MSG("retrodos: %s did not open as a floppy image", path.c_str());
+        return false;
+    }
+
+    if (dos_kernel_disabled) {
+        /* A booted guest reads the floppy through the BIOS disk list, not
+         * through a DOS drive -- so that is what has to change, with the
+         * change flag set so the BIOS reports a media change to the guest.
+         * This is the case this function exists for: Windows enumerated its
+         * floppy drive at boot and is reading the hardware, not DOS. */
+        if (made->loadedDisk == NULL) { delete made; return false; }
+        if (imageDiskList[d]) imageDiskList[d]->Release();
+        imageDiskList[d] = made->loadedDisk;
+        imageDiskChange[d] = true;
+
+        /* Keep the swap list pointing at what is actually in the drive, or the
+         * next Ctrl+F4 swaps back to a disk that is no longer there. */
+        if (swapInDisksSpecificDrive == d && diskSwap[swapPosition]) {
+            diskSwap[swapPosition]->Release();
+            diskSwap[swapPosition] = made->loadedDisk;
+            diskSwap[swapPosition]->Addref();
+        }
+    } else if (Drives[d] != NULL) {
+        DriveManager::ChangeDisk(d, made);
+    } else {
+        /* DOS is running and there is no drive there yet, so this is a mount
+         * rather than a disk change. The three calls are what IMGMOUNT's own
+         * AddToDriveManager does, in its order: without InitializeDrive the
+         * drive letter exists in the table and answers "Invalid drive
+         * specification", which is what this did before. */
+        DriveManager::AppendDisk(d, made);
+        DriveManager::InitializeDrive(d);
+        mem_writeb(Real2Phys(dos.tables.mediaid) + (unsigned int)d * dos.tables.dpb_size,
+                   0xF0 /* 1.44MB floppy */);
+        if (made->loadedDisk) {
+            if (imageDiskList[d]) imageDiskList[d]->Release();
+            imageDiskList[d] = made->loadedDisk;
+            imageDiskList[d]->Addref();
+            imageDiskChange[d] = true;
+        }
+    }
+    return true;
 }
 
 void inject_key(int scancode, bool pressed)
@@ -260,6 +451,9 @@ extern "C" void retrodos_host_pump(void)
             MAPPER_AutoType(seq, 0, 10, false);
             break;
         }
+
+        case Request::InsertCd:     change_cd(r.a, r.text);     break;
+        case Request::InsertFloppy: change_floppy(r.a, r.text); break;
         }
     }
 }
@@ -443,6 +637,24 @@ extern "C" int retrodos_host_send_command(const char *line)
 {
     if (line == nullptr) return -1;
     Request r; r.kind = Request::Command; r.text = line; queue(r);
+    return 0;
+}
+
+extern "C" int retrodos_host_insert_cd(char drive, const char *image_path)
+{
+    if (drive < 'A' || drive > 'Z') return -1;
+    Request r; r.kind = Request::InsertCd; r.a = drive;
+    r.text = image_path ? image_path : "";
+    queue(r);
+    return 0;
+}
+
+extern "C" int retrodos_host_insert_floppy(char drive, const char *image_path)
+{
+    if (drive != 'A' && drive != 'B') return -1;
+    Request r; r.kind = Request::InsertFloppy; r.a = drive;
+    r.text = image_path ? image_path : "";
+    queue(r);
     return 0;
 }
 
