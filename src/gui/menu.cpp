@@ -1187,6 +1187,12 @@ void DOSBoxMenu::item::deallocate(void) {
     topMenu = NULL;
     master_id = unassigned_item_handle;
     status.allocated = 0;
+    /* A deallocated item is in no display list. Leaving in_use set here made
+     * the flag survive into whatever item is next allocated in this slot, and
+     * displaylist_append() then refused it as "already in use" -- an E_Exit,
+     * which in the embedded build takes the entire app down. Reached through
+     * the joystick mapper items, which are the ones rebuilt mid-run. */
+    status.in_use = false;
     status.changed = 1;
     shortcut_text.clear();
     description.clear();
@@ -1198,8 +1204,16 @@ void DOSBoxMenu::displaylist_append(const DOSBoxMenu::item_handle_t parent_id,co
     displaylist &ls = (parent_id == DOSBoxMenu::unassigned_item_handle) ? display_list : get_item(parent_id).display_list;
     DOSBoxMenu::item &item = get_item(item_id);
 
-    if (item.status.in_use)
-        E_Exit("DOSBoxMenu::displaylist_append() item already in use");
+    if (item.status.in_use) {
+        /* Not fatal. The flag can be stale -- displaylist_clear() and
+         * deallocate() historically forgot to reset it -- and E_Exit here
+         * killed the process over a cosmetic menu entry. The engine runs
+         * embedded behind a frontend that never shows this menu at all; a
+         * duplicate append is worth a log line, not the whole app. */
+        LOG(LOG_GUI,LOG_WARN)("displaylist_append() item '%s' already in use, skipping",
+                              item.get_name().c_str());
+        return;
+    }
 
     //assert(item_id == item.master_id);
 
@@ -1218,6 +1232,9 @@ void DOSBoxMenu::displaylist_clear(const DOSBoxMenu::item_handle_t parent_id) {
         if (id != DOSBoxMenu::unassigned_item_handle) {
             DOSBoxMenu::item &item = get_item(id);
             item.parent_id = DOSBoxMenu::unassigned_item_handle;
+            /* The item has just left this list; without this the next append
+             * of the same item hits the "already in use" check. */
+            item.status.in_use = false;
         }
         id = DOSBoxMenu::unassigned_item_handle;
     }

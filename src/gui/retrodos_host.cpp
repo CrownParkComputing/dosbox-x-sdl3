@@ -323,6 +323,10 @@ extern "C" void retrodos_host_mouse_wheel(int dz)
 
 extern "C" void retrodos_host_joystick(int port, int mask, int axis_x, int axis_y)
 {
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "retrodos",
+        "host_joystick port=%d mask=%d x=%d y=%d", port, mask, axis_x, axis_y);
+#endif
     Request r; r.kind = Request::Joystick;
     r.a = port; r.b = mask; r.c = axis_x; r.d = axis_y; queue(r);
 }

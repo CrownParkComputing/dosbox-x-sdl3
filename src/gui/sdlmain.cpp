@@ -10140,9 +10140,17 @@ int main(int argc, char* argv[]) SDL_MAIN_NOEXCEPT {
 #if defined(LINUX)
         if (IS_PC98_ARCH || IS_JEGA_ARCH || isDBCSCP()) InitFontHandle();
 #endif
-        mainMenu.screenWidth = (unsigned int)sdl.surface->w;
-        mainMenu.screenHeight = (unsigned int)sdl.surface->h;
-        mainMenu.updateRect();
+        /* Embedded (gamelink) runs have no on-screen surface: the frontend
+         * owns the window and the menu is never drawn. On a SECOND
+         * dosbox_x_main() in the same process sdl.surface is still NULL when
+         * this runs, and the unguarded deref was a startup crash that only
+         * appeared on relaunch. The menu rect is meaningless without a
+         * surface, so skip it rather than fake one. */
+        if (sdl.surface != NULL) {
+            mainMenu.screenWidth = (unsigned int)sdl.surface->w;
+            mainMenu.screenHeight = (unsigned int)sdl.surface->h;
+            mainMenu.updateRect();
+        }
 #endif
 #if defined(WIN32) && !defined(HX_DOS) && !defined(_WIN32_WINDOWS)
         /* Windows 7 taskbar extension support */
