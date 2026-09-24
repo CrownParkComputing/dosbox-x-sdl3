@@ -159,7 +159,15 @@ void CALLBACK_IdleNoInts(void) {
 }
 
 static Bitu default_handler(void) {
-	LOG(LOG_CPU,LOG_ERROR)("Illegal Unhandled Interrupt Called %X",lastint);
+	/* Rate-limited. A guest that calls an unhandled interrupt in a tight
+	 * loop (some DOS extenders and copy-protection do) otherwise writes
+	 * this line millions of times a second and fills the disk with the log
+	 * -- which is a far worse failure than the one it is reporting. */
+	static unsigned long seen = 0;
+	if (seen < 32 || (seen & 0xFFFFF) == 0)
+		LOG(LOG_CPU,LOG_ERROR)("Illegal Unhandled Interrupt Called %X%s",
+			lastint, seen == 32 ? " (further occurrences suppressed)" : "");
+	++seen;
 	return CBRET_NONE;
 }
 

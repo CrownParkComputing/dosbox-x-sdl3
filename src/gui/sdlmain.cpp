@@ -10323,6 +10323,7 @@ fresh_boot:
             }
             else if (x == 3) { /* reboot the system */
                 LOG(LOG_MISC,LOG_DEBUG)("Emulation threw a signal to reboot the system");
+                LOG_MSG("Reboot requested by the guest (keyboard controller / INT 19h / RESTART)");
 
                 reboot_machine = true;
                 dos_kernel_shutdown = !dos_kernel_disabled; /* only if DOS kernel enabled */
@@ -10351,6 +10352,7 @@ fresh_boot:
             }
             else if (x == 9) { /* BIOS caught a JMP to F000:FFF0 without any other hardware reset signal */
                 LOG(LOG_MISC,LOG_DEBUG)("Emulation detected JMP to BIOS POST routine");
+                LOG_MSG("Reboot: guest jumped to the BIOS POST vector (F000:FFF0)");
 
                 reboot_machine = true;
                 dos_kernel_shutdown = !dos_kernel_disabled; /* only if DOS kernel enabled */

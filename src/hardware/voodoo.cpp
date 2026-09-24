@@ -109,7 +109,8 @@ class VOODOO:public Module_base{
 				emulation_type=0;
 			}
 
-			Bits card_type = 1;
+			Bits card_type = section->Get_int("voodoo_type");
+			if (card_type != 1 && card_type != 2) card_type = 1;
 			bool max_voodoomem = true;
 			if (section->Get_bool("voodoo_maxmem"))
 				max_voodoomem = true;
