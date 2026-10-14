@@ -68,6 +68,30 @@ void MAPPER_AutoType(std::vector<std::string> &sequence, const uint32_t wait_ms,
                      const uint32_t pace_ms, bool choice);
 void MAPPER_CheckEvent(SDL_Event *event);
 
+/*
+ * DOSBox-X's own "paste text into the guest" machinery, which is how a line
+ * of text becomes keystrokes here.
+ *
+ * It replaced MAPPER_AutoType, which this file used to call with the whole
+ * line as a single element -- and that vector is a list of MAPPER BUTTON
+ * NAMES ("a", "space", "enter"), not text. Every call therefore ended in
+ *
+ *   MAPPER: Couldn't find a button named 'ECHO hi >> C:\RAN.TXT', stopping.
+ *
+ * and typed nothing at all, which silently broke send_command() and the three
+ * mount helpers built on it. The typist could not have been made to work
+ * without a character-to-button table, and it shifts only for capital
+ * letters, so a path containing '_' or '>' was out of reach regardless.
+ *
+ * strPasteBuffer is consumed one character per PasteClipboardNext() call,
+ * each one going into the BIOS keyboard buffer exactly as a typed key does.
+ * sdlmain.cpp drains it from GFX_Events() -- but BELOW the embedded early
+ * return, so an embedded host never reached it. Hence the drain in pump().
+ */
+extern std::string strPasteBuffer;
+extern int paste_speed;
+bool PasteClipboardNext(void);
+
 /* Defined in sdlmain.cpp. See the note in the MouseMove case below. */
 extern "C++" { extern bool user_cursor_locked; }
 
@@ -444,17 +468,38 @@ extern "C" void retrodos_host_pump(void)
             break;
         }
 
-        case Request::Command: {
-            std::vector<std::string> seq;
-            seq.push_back(r.text);
-            seq.push_back("\n");
-            MAPPER_AutoType(seq, 0, 10, false);
+        case Request::Command:
+            /* Queued, not typed: the BIOS keyboard buffer holds 16 keys, and
+             * a mount command is longer than that. The drain below feeds it
+             * at the guest's reading pace, and a second command queued behind
+             * the first simply types after it. */
+            strPasteBuffer += r.text;
+            strPasteBuffer += '\r';
             break;
-        }
 
         case Request::InsertCd:     change_cd(r.a, r.text);     break;
         case Request::InsertFloppy: change_floppy(r.a, r.text); break;
         }
+    }
+
+    /*
+     * Type one character of any queued command line.
+     *
+     * This is the drain sdlmain.cpp performs for a real user's paste, at the
+     * same pace and through the same function -- repeated here because the
+     * copy in GFX_Events() sits below the `if (retrodos_host_embedded())
+     * return`, so an embedded host would never type anything.
+     *
+     * One character per `paste_speed` ticks, and a tick is a millisecond, so
+     * the default 30 types about 33 characters a second. Slower than it could
+     * be, and deliberately so: the BIOS buffer holds 16 keys and COMMAND.COM
+     * drains it only while it is asking for a line.
+     */
+    if (!strPasteBuffer.empty()) {
+        static unsigned type_tick = 0;
+        const unsigned speed = paste_speed > 0 ? (unsigned)paste_speed : 30u;
+        if ((type_tick++ % speed) == 0)
+            PasteClipboardNext();
     }
 }
 
