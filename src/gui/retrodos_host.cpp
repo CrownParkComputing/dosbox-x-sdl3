@@ -69,28 +69,29 @@ void MAPPER_AutoType(std::vector<std::string> &sequence, const uint32_t wait_ms,
 void MAPPER_CheckEvent(SDL_Event *event);
 
 /*
- * DOSBox-X's own "paste text into the guest" machinery, which is how a line
- * of text becomes keystrokes here.
+ * Typing a line into the guest, one character at a time.
  *
- * It replaced MAPPER_AutoType, which this file used to call with the whole
+ * This replaced MAPPER_AutoType, which this file used to call with the whole
  * line as a single element -- and that vector is a list of MAPPER BUTTON
  * NAMES ("a", "space", "enter"), not text. Every call therefore ended in
  *
  *   MAPPER: Couldn't find a button named 'ECHO hi >> C:\RAN.TXT', stopping.
  *
  * and typed nothing at all, which silently broke send_command() and the three
- * mount helpers built on it. The typist could not have been made to work
- * without a character-to-button table, and it shifts only for capital
- * letters, so a path containing '_' or '>' was out of reach regardless.
+ * mount helpers built on it.
  *
- * strPasteBuffer is consumed one character per PasteClipboardNext() call,
- * each one going into the BIOS keyboard buffer exactly as a typed key does.
- * sdlmain.cpp drains it from GFX_Events() -- but BELOW the embedded early
- * return, so an embedded host never reached it. Hence the drain in pump().
+ * Characters go into the BIOS keyboard buffer, which is where a real key
+ * lands and what COMMAND.COM reads. DOSBox-X's own clipboard paste does the
+ * same thing -- but it is NOT reused here, for the reason the drain explains:
+ * it consumes a character whether or not the buffer had room for it.
  */
-extern std::string strPasteBuffer;
-extern int paste_speed;
-bool PasteClipboardNext(void);
+bool BIOS_AddKeyToBuffer(uint16_t code);
+
+/* What is still to be typed, and how long to wait before typing more of it.
+ * Written and drained on the emulator thread only: Request::Command arrives
+ * through the pump, which is already there. */
+std::string g_typing;
+int         g_type_cooldown = 0;
 
 /* Defined in sdlmain.cpp. See the note in the MouseMove case below. */
 extern "C++" { extern bool user_cursor_locked; }
@@ -473,8 +474,8 @@ extern "C" void retrodos_host_pump(void)
              * a mount command is longer than that. The drain below feeds it
              * at the guest's reading pace, and a second command queued behind
              * the first simply types after it. */
-            strPasteBuffer += r.text;
-            strPasteBuffer += '\r';
+            g_typing += r.text;
+            g_typing += '\r';
             break;
 
         case Request::InsertCd:     change_cd(r.a, r.text);     break;
@@ -483,23 +484,50 @@ extern "C" void retrodos_host_pump(void)
     }
 
     /*
-     * Type one character of any queued command line.
+     * Type a queued command.
      *
-     * This is the drain sdlmain.cpp performs for a real user's paste, at the
-     * same pace and through the same function -- repeated here because the
-     * copy in GFX_Events() sits below the `if (retrodos_host_embedded())
-     * return`, so an embedded host would never type anything.
+     * Within a line, as fast as the guest will take it: the guest's own
+     * keyboard buffer is the pacing, because BIOS_AddKeyToBuffer refuses when
+     * its 16 keys are full and the character is then kept for the next tick
+     * rather than thrown away.
      *
-     * One character per `paste_speed` ticks, and a tick is a millisecond, so
-     * the default 30 types about 33 characters a second. Slower than it could
-     * be, and deliberately so: the BIOS buffer holds 16 keys and COMMAND.COM
-     * drains it only while it is asking for a line.
+     * BETWEEN lines, a pause -- and that is the part that was not obvious.
+     * DOS discards pending keystrokes when a command finishes, which is
+     * type-ahead protection and exactly right for a person at a keyboard: you
+     * should not have half a sentence execute because you kept typing while
+     * something scrolled. It is fatal to typing ahead, though, and it is
+     * fatal SILENTLY. Queuing
+     *
+     *   C:   /   mount D "<path>"   /   D:   /   GO.BAT
+     *
+     * put this on the screen:
+     *
+     *   C:\>C:
+     *   C:\>p/claude-1000/.../GAME"      <- "mount D "/tm" eaten
+     *   C:\>T                            <- "GO.BA" eaten
+     *
+     * Every line after the first lost its beginning, which reads as corrupted
+     * input and is really a flush. So each Enter starts a cooldown, and
+     * nothing is typed until it expires: by then the shell has finished the
+     * command, drawn its prompt and is asking for a line again.
+     *
+     * A tick is an emulated millisecond, so this is about a second. Generous
+     * on purpose -- the cost of being wrong is a command silently losing its
+     * first few characters, and the cost of waiting is that mounting a drive
+     * takes a second longer than it might.
      */
-    if (!strPasteBuffer.empty()) {
-        static unsigned type_tick = 0;
-        const unsigned speed = paste_speed > 0 ? (unsigned)paste_speed : 30u;
-        if ((type_tick++ % speed) == 0)
-            PasteClipboardNext();
+    if (!g_typing.empty()) {
+        if (g_type_cooldown > 0) {
+            --g_type_cooldown;
+        } else {
+            const unsigned char ch = (unsigned char)g_typing[0];
+            /* Enter as the BIOS reports it: scancode 0x1C, ASCII 0x0D. */
+            const uint16_t code = (ch == '\r') ? 0x1C0D : (uint16_t)ch;
+            if (BIOS_AddKeyToBuffer(code)) {
+                g_typing.erase(0, 1);
+                if (ch == '\r') g_type_cooldown = 1000;
+            }
+        }
     }
 }
 
